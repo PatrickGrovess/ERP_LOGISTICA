@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # Servidor Web (Nginx) para atender las peticiones de la API
+  web:
+    image: nginx:alpine
+    container_name: erp_nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./backend:/var/www/html
+      - ./docker/nginx:/etc/nginx/conf.d
+    depends_on:
+      - app
+
+  # Servidor de Aplicación (PHP-FPM) para ejecutar Laravel
+  app:
+    build:
+      context: .
+      dockerfile: ./docker/php.dockerfile
+    container_name: erp_backend
+    volumes:
+      - ./backend:/var/www/html
+    working_dir: /var/www/html
+
+  # Base de Datos (MySQL) para el almacenamiento persistente
+  db:
+    image: mysql:8.0
+    container_name: erp_database
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: erp_inventory
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_USER: erp_user
+      MYSQL_PASSWORD: erp_password
+    volumes:
+      - db_data:/var/lib/mysql
+
+volumes:
+  db_data:
