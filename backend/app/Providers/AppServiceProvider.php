@@ -4,7 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use App\Modules\Inventory\Repositories\StockMovementRepositoryInterface;
-use app\Modules\Inventory\Repositories\EloquentStockMovementRepository;
+use App\Modules\Inventory\Repositories\EloquentStockMovementRepository;
 
 class AppServiceProvider extends ServiceProvider
 {

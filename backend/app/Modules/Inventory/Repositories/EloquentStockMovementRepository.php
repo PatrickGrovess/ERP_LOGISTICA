@@ -8,11 +8,12 @@ use Illuminate\Support\Facades\DB;
 
 class EloquentStockMovementRepository implements StockMovementRepositoryInterface
 {
-    public function create(stockMovementDTO $stockMovementDTO): StockMovement
+    public function create(StockMovementDTO $stockMovementDTO): StockMovement
     {
         return StockMovement::create([
             'product_id' => $stockMovementDTO->productId,
             'location_id' => $stockMovementDTO->locationId,
+            'user_id'     => $stockMovementDTO->userId,
             'type' => $stockMovementDTO->type,
             'quantity' => $stockMovementDTO->quantity,
         ]);
