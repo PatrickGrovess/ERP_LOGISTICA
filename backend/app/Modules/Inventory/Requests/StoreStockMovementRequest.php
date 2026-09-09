@@ -13,7 +13,7 @@ class StoreStockMovementRequest extends FormRequest
     public function rules() : array
     {
         return [
-            'user_id' => ['required', 'integer', 'exists:users,id'],
+            // 'user_id' => ['required', 'integer', 'exists:users,id'],
             'product_id'  => ['required', 'integer'],
             'location_id' => ['required', 'integer'],
             'type'        => ['required', 'string', 'in:INBOUND,OUTBOUND,ADJUSTMENT'],

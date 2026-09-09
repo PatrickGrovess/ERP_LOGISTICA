@@ -6,6 +6,7 @@ use App\Modules\Inventory\Requests\StoreStockMovementRequest;
 use App\Modules\Inventory\DTOs\StockMovementDTO;
 use App\Modules\Inventory\Services\StockService;
 use Illuminate\Http\JsonResponse;
+use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 use Exception;
 
 class StockController extends Controller
@@ -18,7 +19,12 @@ class StockController extends Controller
     public function store(storeStockMovementRequest $request) : jsonResponse
     {
         try{
-            $dto = StockMovementDTO::fromArray($request->validated());
+            $data = $request->validated();
+
+            $data['user_id'] = JWTAuth::parseToken()->authenticate()->id;
+            
+            
+            $dto = StockMovementDTO::fromArray($data);  
 
             $movement = $this->stockService->registerMovement($dto);
 
