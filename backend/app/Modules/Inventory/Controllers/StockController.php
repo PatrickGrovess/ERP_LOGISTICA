@@ -4,6 +4,7 @@ namespace App\Modules\Inventory\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Inventory\Requests\StoreStockMovementRequest;
 use App\Modules\Inventory\DTOs\StockMovementDTO;
+use App\Modules\Inventory\Models\StockMovement;
 use App\Modules\Inventory\Services\StockService;
 use Illuminate\Http\JsonResponse;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
@@ -16,7 +17,7 @@ class StockController extends Controller
     )
     {}
 
-    public function store(storeStockMovementRequest $request) : jsonResponse
+    public function store(StoreStockMovementRequest $request) : jsonResponse
     {
         try{
             $data = $request->validated();
@@ -37,6 +38,22 @@ class StockController extends Controller
                 'message' => $e->getMessage(),
             ], 400);
 
+        }
+    }
+
+    public function index() : jsonResponse
+    {
+        try{
+            $movements = StockMovement::with(["product", "location", "user"])->latest()->get();
+
+            return response()->json([
+                "status" => "success",
+                "data" => $movements
+            ], 200);
+        }catch(Exception $e){
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 500);
         }
     }
 

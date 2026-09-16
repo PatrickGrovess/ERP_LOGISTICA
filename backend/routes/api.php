@@ -18,4 +18,5 @@ Route::prefix("v1/auth")->group(function(){
 // Rutas de inventario protegidas por el token jwt
 Route::middleware("auth:api")->prefix("inventory")->group(function () {
     Route::post("/movements", [StockController::class, 'store']);
+    Route::get("/movements", [StockController::class, 'index']);
 });
