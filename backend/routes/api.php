@@ -19,4 +19,5 @@ Route::prefix("v1/auth")->group(function(){
 Route::middleware("auth:api")->prefix("inventory")->group(function () {
     Route::post("/movements", [StockController::class, 'store']);
     Route::get("/movements", [StockController::class, 'index']);
+    Route::get("/stock", [StockController::class, 'currentStock']);
 });

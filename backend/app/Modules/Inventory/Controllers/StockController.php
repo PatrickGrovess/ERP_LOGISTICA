@@ -57,5 +57,21 @@ class StockController extends Controller
         }
     }
 
+    public function currentStock() : jsonResponse
+    {
+        try{
+            $stock = $this->stockService->getCurrentStock();
+
+            return response()->json([
+                "status" => "success",
+                "data" => $stock
+            ], 200);
+        }catch(Exception $e){
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
 
 }
