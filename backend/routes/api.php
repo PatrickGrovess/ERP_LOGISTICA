@@ -2,11 +2,12 @@
 
 use App\Modules\Inventory\Controllers\StockController;
 use App\Http\Controllers\Api\AuthController;
+use App\Modules\Inventory\Controllers\ProductController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix("v1/inventory")->group(function() {
-    Route::post("/movements", [StockController::class, 'store']);
-});
+// Route::prefix("v1/inventory")->group(function() {
+//     Route::post("/movements", [StockController::class, 'store']);
+// });
 
 Route::prefix("v1/auth")->group(function(){
     Route::post("/register", [AuthController::class, 'register']);
@@ -26,6 +27,7 @@ Route::middleware("auth:api")->prefix("inventory")->group(function () {
 
     // Solo Admin puede registrar nuevos movimientos de stock
     Route::middleware('role:admin')->group(function () {
+        Route::post('/products', [ProductController::class, 'store']);
         Route::post('/movements', [StockController::class, 'store']);
     });
 });
