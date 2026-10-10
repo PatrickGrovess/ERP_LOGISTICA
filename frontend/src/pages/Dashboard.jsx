@@ -10,8 +10,10 @@ const Dashboard = () => {
         const fetchStock = async () => {
             try {
                 const response = await api.get('/inventory/stock');
-                // Sincronizado exactamente con tu propiedad .data.data del backend
-                const dataReal = Array.isArray(response.data) ? response.data : (response.data.data || []);
+                // Sincronización con la respuesta del Backend
+                const dataReal = Array.isArray(response.data) 
+                    ? response.data 
+                    : (response.data.data || []);
                 setStockData(dataReal);
             } catch (err) {
                 setError('No se pudo cargar la información de las métricas.');
@@ -25,8 +27,7 @@ const Dashboard = () => {
 
     if (loading) {
         return (
-            <div className="flex flex-col justify-center items-center h-screen bg-gray-50 space-y-4">
-                {/* Spinner rojo giratorio profesional */}
+            <div className="flex flex-col justify-center items-center h-screen bg-inherit space-y-4">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#FE2C55]"></div>
                 <span className="text-gray-600 font-medium">
                     Cargando métricas del sistema...
@@ -44,55 +45,65 @@ const Dashboard = () => {
     }
 
     // ==========================================
-    // 📊 CÁLCULOS DINÁMICOS REALES (MÉTRICAS DEL BACKEND)
+    // 📊 CÁLCULOS Y MÉTRICAS REALES
     // ==========================================
     
-    // 1. Total Unidades Físicas Consolidadas (Suma de current_stock de cada ítem)
+    // 1. Total Unidades Físicas
     const totalUnitsInStock = stockData.reduce((acc, curr) => acc + Number(curr.current_stock || 0), 0);
     
-    // 2. Alertas de Stock Bajo (Ítems con menos de 10 unidades reales en current_stock)
-    const lowStockAlerts = stockData.filter(item => Number(item.current_stock || 0) < 10).length;
+    // 2. Alertas de Stock Bajo (Evalúa min_stock si existe, o umbral por defecto de 10)
+    const lowStockItems = stockData.filter(item => {
+        const current = Number(item.current_stock || 0);
+        const limit = item.min_stock !== undefined ? Number(item.min_stock) : 10;
+        return current < limit;
+    });
+    const lowStockAlerts = lowStockItems.length;
     
-    // 3. Total Referencias Únicas (Total de SKUs activos en la base de datos)
+    // 3. SKUs o Referencias Únicas
     const totalReferences = stockData.length;
 
-    // 4. Sumatorias para contexto visual adicional
+    // 4. Entradas y Salidas Históricas Consolidadas
     const overallInbound = stockData.reduce((acc, curr) => acc + Number(curr.total_inbound || 0), 0);
     const overallOutbound = stockData.reduce((acc, curr) => acc + Number(curr.total_outbound || 0), 0);
 
-    // 5. Mapeo dinámico para la gráfica de "Top Movers" usando tus productos reales
-    // Tomamos el stock_outbound (Salidas/Despachos) para ordenar los más movidos
+    // 5. Productos de Mayor Rotación (Top 5 Outbound)
     const topMoversData = [...stockData]
         .sort((a, b) => Number(b.total_outbound || 0) - Number(a.total_outbound || 0))
-        .slice(0, 5) // Tomamos el TOP 5
+        .slice(0, 5)
         .map(item => {
-            const maxOutbound = Math.max(...stockData.map(s => Number(s.total_outbound || 1)), 1);
-            // Calculamos el porcentaje de altura para las barras CSS de manera proporcional
-            const percentage = (Number(item.total_outbound || 0) / maxOutbound) * 100;
+            const maxOutbound = Math.max(...stockData.map(s => Number(s.total_outbound || 0)), 1);
+            const value = Number(item.total_outbound || 0);
+            const percentage = (value / maxOutbound) * 100;
             return {
                 name: item.product?.name || item.product?.sku || `ID: ${item.product_id}`,
-                h: `${Math.max(percentage, 10)}%`, // Mínimo 10% de altura visual
-                value: item.total_outbound
+                h: `${Math.max(percentage, 12)}%`,
+                value
             };
         });
 
+    // 6. Estado General de Salud del Inventario (Calculado)
+    const healthyStockCount = totalReferences - lowStockAlerts;
+    const healthPercentage = totalReferences > 0 
+        ? Math.round((healthyStockCount / totalReferences) * 100) 
+        : 100;
+
     return (
         <div className="space-y-6 text-gray-200 font-sans">
-            {/* Header del Dashboard */}
+            {/* Header */}
             <div>
-                <h1 className="text-2xl font-bold text-white tracking-tight">Dashboard</h1>
+                <h1 className="text-2xl font-bold text-white tracking-tight">Dashboard de Inventario</h1>
                 <p className="text-xs text-gray-400 mt-1">
-                    {new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} · Análisis y métricas de rendimiento
+                    {new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} · Estado y rendimiento general del almacén
                 </p>
             </div>
 
             {/* Tarjetas de Métricas Principales */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {/* Métricas 1: Total Unidades */}
+                {/* Métricas 1: Unidades Totales */}
                 <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-5 flex flex-col justify-between space-y-4">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                            TOTAL ITEMS IN STOCK
+                            Stock Físico Total
                         </span>
                         <div className="w-8 h-8 rounded-lg bg-[#FE2C55]/10 text-[#FE2C55] flex items-center justify-center">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -104,8 +115,8 @@ const Dashboard = () => {
                         <p className="text-3xl font-extrabold text-white tracking-tight">
                             {totalUnitsInStock.toLocaleString()}
                         </p>
-                        <p className="text-xs font-medium text-[#FE2C55] flex items-center space-x-1 mt-1">
-                            <span>▲ Unidades físicas consolidadas</span>
+                        <p className="text-xs font-medium text-gray-400 flex items-center space-x-1 mt-1">
+                            <span>Unidades disponibles en almacén</span>
                         </p>
                     </div>
                 </div>
@@ -114,7 +125,7 @@ const Dashboard = () => {
                 <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-5 flex flex-col justify-between space-y-4">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                            LOW STOCK ALERTS
+                            Alertas de Reposición
                         </span>
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${lowStockAlerts > 0 ? 'bg-amber-500/10 text-amber-500 animate-pulse' : 'bg-gray-800 text-gray-400'}`}>
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -126,8 +137,8 @@ const Dashboard = () => {
                         <p className={`text-3xl font-extrabold tracking-tight ${lowStockAlerts > 0 ? 'text-amber-400' : 'text-white'}`}>
                             {lowStockAlerts}
                         </p>
-                        <p className="text-xs font-medium text-amber-400 flex items-center space-x-1 mt-1">
-                            <span>▼ Ítems con menos de 10 unidades</span>
+                        <p className="text-xs font-medium text-amber-400/90 flex items-center space-x-1 mt-1">
+                            <span>{lowStockAlerts === 1 ? '1 producto por debajo del mínimo' : `${lowStockAlerts} productos por debajo del mínimo`}</span>
                         </p>
                     </div>
                 </div>
@@ -136,11 +147,11 @@ const Dashboard = () => {
                 <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-5 flex flex-col justify-between space-y-4">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                            TOTAL REFERENCIAS
+                            Catálogo de Productos
                         </span>
                         <div className="w-8 h-8 rounded-lg bg-[#FE2C55]/10 text-[#FE2C55] flex items-center justify-center">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                             </svg>
                         </div>
                     </div>
@@ -149,94 +160,128 @@ const Dashboard = () => {
                             {totalReferences}
                         </p>
                         <p className="text-xs font-medium text-gray-400 flex items-center space-x-1 mt-1">
-                            <span>▲ SKUs únicos activos</span>
+                            <span>SKUs registrados y activos</span>
                         </p>
                     </div>
                 </div>
             </div>
 
-            {/* Sección Gráficas */}
+            {/* Sección de Métricas Funcionales */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Gráfica de Línea: Monthly Turnover */}
-                <div className="lg:col-span-2 bg-[#161B22] border border-gray-800/80 rounded-2xl p-6 flex flex-col justify-between space-y-4">
-                    <div className="flex justify-between items-center">
+                {/* Salud del Stock y Balance (Reemplaza el turnover estático) */}
+                <div className="lg:col-span-2 bg-[#161B22] border border-gray-800/80 rounded-2xl p-6 flex flex-col justify-between space-y-6">
+                    <div className="flex justify-between items-center border-b border-gray-800/60 pb-4">
                         <div>
-                            <h3 className="text-base font-bold text-white">Monthly Turnover</h3>
-                            <p className="text-xs text-gray-400">Flujo global acumulado de almacén</p>
+                            <h3 className="text-base font-bold text-white">Estado de Salud del Inventario</h3>
+                            <p className="text-xs text-gray-400">Relación de productos con stock adecuado vs. stock crítico</p>
                         </div>
-                        <span className="text-xs font-semibold bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20 px-2.5 py-1 rounded-lg">
-                            2026 YTD
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${
+                            healthPercentage > 80 
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        }`}>
+                            {healthPercentage}% Saludable
                         </span>
                     </div>
 
-                    <div className="h-44 w-full flex items-end pt-4">
-                        <svg className="w-full h-full overflow-visible" viewBox="0 0 500 120" fill="none">
-                            <path
-                                d="M 0 80 Q 50 90, 100 60 T 200 50 T 300 70 T 400 30 T 500 10"
-                                fill="none"
-                                stroke="#FE2C55"
-                                strokeWidth="3"
+                    {/* Barra Progresiva de Estado */}
+                    <div className="space-y-2">
+                        <div className="flex justify-between text-xs text-gray-400">
+                            <span>Disponibilidad óptima</span>
+                            <span>{healthyStockCount} de {totalReferences} SKUs</span>
+                        </div>
+                        <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden flex">
+                            <div 
+                                style={{ width: `${healthPercentage}%` }} 
+                                className="bg-emerald-500 h-full transition-all duration-500" 
                             />
-                            <path
-                                d="M 0 100 Q 50 105, 100 85 T 200 75 T 300 90 T 400 60 T 500 40"
-                                fill="none"
-                                stroke="#374151"
-                                strokeWidth="2"
-                                strokeDasharray="4 4"
+                            <div 
+                                style={{ width: `${100 - healthPercentage}%` }} 
+                                className="bg-amber-500 h-full transition-all duration-500" 
                             />
-                        </svg>
+                        </div>
                     </div>
 
-                    <div className="flex justify-between text-[11px] font-medium text-gray-500 pt-2 border-t border-gray-800/60">
-                        <span>Ene</span><span>Feb</span><span>Mar</span><span>Abr</span>
-                        <span>May</span><span>Jun</span><span>Jul</span><span>Ago</span><span>Sep</span>
+                    {/* Resumen del Balance Operativo */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                        <div className="bg-gray-900/50 border border-gray-800/60 rounded-xl p-4 flex items-center space-x-4">
+                            <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-lg">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
+                                </svg>
+                            </div>
+                            <div>
+                                <span className="text-xs text-gray-400 block">Entradas Acumuladas</span>
+                                <span className="text-lg font-bold text-white">{overallInbound.toLocaleString()} u.</span>
+                            </div>
+                        </div>
+
+                        <div className="bg-gray-900/50 border border-gray-800/60 rounded-xl p-4 flex items-center space-x-4">
+                            <div className="p-3 bg-[#FE2C55]/10 text-[#FE2C55] rounded-lg">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
+                                </svg>
+                            </div>
+                            <div>
+                                <span className="text-xs text-gray-400 block">Salidas Acumuladas</span>
+                                <span className="text-lg font-bold text-white">{overallOutbound.toLocaleString()} u.</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                {/* Gráfica de Barras Dinámica: Top Movers */}
+                {/* Top Movers (Barras Dinámicas) */}
                 <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-6 flex flex-col justify-between space-y-4">
                     <div>
-                        <h3 className="text-base font-bold text-white">Top Movers</h3>
-                        <p className="text-xs text-gray-400">Unidades reales despachadas (Outbound)</p>
+                        <h3 className="text-base font-bold text-white">Top 5 Más Despachados</h3>
+                        <p className="text-xs text-gray-400">Productos con mayor cantidad de salidas (Outbound)</p>
                     </div>
 
-                    <div className="h-44 flex items-end justify-between gap-3 pt-4">
+                    <div className="h-48 flex items-end justify-between gap-3 pt-4">
                         {topMoversData.length > 0 ? (
                             topMoversData.map((bar, i) => (
                                 <div key={i} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
-                                    <span className="text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <span className="text-[10px] font-semibold text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
                                         {bar.value}
                                     </span>
                                     <div
                                         className="w-full bg-[#FE2C55] rounded-t-lg transition-all duration-300 hover:opacity-80"
                                         style={{ height: bar.h }}
                                     ></div>
-                                    <span className="text-[10px] text-gray-400 truncate w-full text-center">{bar.name}</span>
+                                    <span className="text-[10px] text-gray-400 truncate w-full text-center" title={bar.name}>
+                                        {bar.name}
+                                    </span>
                                 </div>
                             ))
                         ) : (
-                            <p className="text-xs text-gray-500 m-auto">Sin registros de salida activos.</p>
+                            <p className="text-xs text-gray-500 m-auto text-center">
+                                Sin movimientos de salida registrados.
+                            </p>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* Fila Inferior: Summary Health / Activity */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-3 bg-[#161B22] border border-gray-800/80 rounded-2xl p-6 space-y-5">
-                    <h3 className="text-base font-bold text-white">Resumen de Actividad de Carga</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2 bg-gray-900/40 p-4 rounded-xl border border-gray-800/40">
-                            <span className="text-xs text-gray-400">Entradas Históricas Consolidadas</span>
-                            <p className="text-xl font-bold text-white">{overallInbound.toLocaleString()} unidades</p>
-                        </div>
-                        <div className="space-y-2 bg-gray-900/40 p-4 rounded-xl border border-gray-800/40">
-                            <span className="text-xs text-gray-400">Salidas Históricas Consolidadas</span>
-                            <p className="text-xl font-bold text-[#FE2C55]">{overallOutbound.toLocaleString()} unidades</p>
-                        </div>
+            {/* Listado Crítico Opcional de Atención Inmediata */}
+            {lowStockItems.length > 0 && (
+                <div className="bg-[#161B22] border border-amber-500/20 rounded-2xl p-5 space-y-3">
+                    <h4 className="text-sm font-bold text-amber-400 flex items-center space-x-2">
+                        <span>⚠️ Productos Requieren Atención Inmediata</span>
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {lowStockItems.slice(0, 6).map((item, index) => (
+                            <div key={index} className="bg-gray-900/60 p-3 rounded-lg border border-gray-800 flex justify-between items-center text-xs">
+                                <span className="text-gray-300 font-medium truncate max-w-[150px]">
+                                    {item.product?.name || item.product?.sku || `Producto ${item.product_id}`}
+                                </span>
+                                <span className="text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded">
+                                    {item.current_stock} u.
+                                </span>
+                            </div>
+                        ))}
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 };

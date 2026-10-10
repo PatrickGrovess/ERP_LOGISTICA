@@ -4,22 +4,48 @@ import { useAuth } from '../context/AuthContext';
 
 const Users = () => {
     const { user } = useAuth();
+    const isAdmin = ['admin', 'owner'].includes(user?.role?.toLowerCase());
+
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
     // Modal para invitar / crear usuario
     const [showInviteModal, setShowInviteModal] = useState(false);
-    const [inviteData, setInviteData] = useState({ name: '', email: '', role: 'Staff' });
+    const [inviteData, setInviteData] = useState({ name: '', email: '', role: 'operator' });
     const [inviteLoading, setInviteLoading] = useState(false);
     const [inviteError, setInviteError] = useState('');
 
-    // Obtener listado de usuarios
-    const fetchUsers = async () => {
+    // Cargar usuarios procesando los movimientos de inventario
+    const fetchUsersFromMovements = async () => {
         try {
-            const response = await api.get('/users');
-            setUsers(Array.isArray(response.data) ? response.data : (response.data?.data || []));
+            const response = await api.get('/inventory/movements');
+            const movements = Array.isArray(response.data) ? response.data : (response.data?.data || []);
+
+            const uniqueUsersMap = new Map();
+
+            movements.forEach(movement => {
+                if (movement.user && movement.user.id) {
+                    uniqueUsersMap.set(movement.user.id, {
+                        id: movement.user.id,
+                        name: movement.user.name || 'Sin Nombre',
+                        email: movement.user.email || 'Sin Email',
+                        role: movement.user.role || 'operator',
+                        status: movement.user.status || 'Active',
+                        joinedDate: movement.created_at 
+                            ? new Date(movement.created_at).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                year: 'numeric' 
+                              })
+                            : 'Jan 2025'
+                    });
+                }
+            });
+
+            setUsers(Array.from(uniqueUsersMap.values()));
+            setError('');
         } catch (err) {
+            console.error('Error al procesar usuarios desde movimientos:', err);
             setError('Error al obtener la lista de usuarios.');
         } finally {
             setLoading(false);
@@ -27,18 +53,20 @@ const Users = () => {
     };
 
     useEffect(() => {
-        fetchUsers();
+        fetchUsersFromMovements();
     }, []);
 
-    // Cálculo de métricas dinámicas
+    // Métricas para la interfaz visual
     const totalUsers = users.length;
-    const adminCount = users.filter(u => u.role?.toLowerCase() === 'admin' || u.role?.toLowerCase() === 'owner').length;
-    const activeCount = users.filter(u => u.status?.toLowerCase() === 'active' || u.is_active === true || u.is_active === 1).length;
+    const adminCount = users.filter(u => u.role?.toLowerCase() === 'admin').length;
+    const activeCount = users.filter(u => u.status?.toLowerCase() === 'active' || u.status === undefined).length;
     const restrictedCount = totalUsers - activeCount;
 
-    // Cambiar estado de acceso (Toggle Active/Restricted)
+    // Toggle de estado de acceso
     const handleToggleAccess = async (targetUser) => {
-        const newStatus = targetUser.status === 'Active' ? 'Restricted' : 'Active';
+        if (!isAdmin) return;
+        const currentStatus = targetUser.status || 'Active';
+        const newStatus = currentStatus.toLowerCase() === 'active' ? 'Restricted' : 'Active';
         try {
             await api.patch(`/users/${targetUser.id}`, { status: newStatus });
             setUsers(users.map(u => u.id === targetUser.id ? { ...u, status: newStatus } : u));
@@ -47,9 +75,10 @@ const Users = () => {
         }
     };
 
-    // Cambiar rol de usuario
+    // Cambiar rol
     const handleChangeRole = async (targetUser) => {
-        const newRole = targetUser.role?.toLowerCase() === 'admin' ? 'Staff' : 'Admin';
+        if (!isAdmin) return;
+        const newRole = targetUser.role?.toLowerCase() === 'admin' ? 'operator' : 'admin';
         try {
             await api.patch(`/users/${targetUser.id}`, { role: newRole });
             setUsers(users.map(u => u.id === targetUser.id ? { ...u, role: newRole } : u));
@@ -58,35 +87,32 @@ const Users = () => {
         }
     };
 
-    // Generar iniciales a partir del nombre
+    // Iniciales para avatar
     const getInitials = (name = '') => {
         const parts = name.trim().split(' ');
-        if (parts.length >= 2) {
+        if (parts.length >= 2 && parts[0] && parts[1]) {
             return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
         }
         return name.slice(0, 2).toUpperCase() || 'US';
     };
 
-    // Colores para los avatares de iniciales
-    const avatarColors = [
-        'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-        'bg-blue-500/10 text-blue-400 border-blue-500/20',
-        'bg-purple-500/10 text-purple-400 border-purple-500/20',
-        'bg-amber-500/10 text-amber-400 border-amber-500/20',
-        'bg-rose-500/10 text-rose-400 border-rose-500/20'
-    ];
-
-    // Enviar invitación
+    // Registrar / Invitar usuario
     const handleInviteSubmit = async (e) => {
         e.preventDefault();
+        if (!isAdmin) return;
         setInviteError('');
         setInviteLoading(true);
 
         try {
-            await api.post('/users/invite', inviteData);
+            await api.post('v1/auth/register', {
+                email: inviteData.email,
+                password: 'Password123!',
+                fullName: inviteData.name,
+                role: inviteData.role
+            });
             setShowInviteModal(false);
-            setInviteData({ name: '', email: '', role: 'Staff' });
-            fetchUsers();
+            setInviteData({ name: '', email: '', role: 'operator' });
+            fetchUsersFromMovements();
         } catch (err) {
             setInviteError(err.response?.data?.message || 'Error al enviar la invitación.');
         } finally {
@@ -96,250 +122,227 @@ const Users = () => {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="flex items-center space-x-3 text-gray-400">
-                    <svg className="w-6 h-6 animate-spin text-[#6366F1]" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span className="text-sm font-medium">Cargando usuarios...</span>
-                </div>
+            <div className="flex flex-col justify-center items-center h-screen bg-[#0D1117] space-y-4">
+                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-[#FE2C55]"></div>
+                <span className="text-gray-400 font-medium text-sm">Cargando gestión de usuarios...</span>
             </div>
         );
     }
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="space-y-6 text-gray-200 font-sans p-2">
+            {/* Header completo de User Management */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <div className="flex items-center space-x-3">
-                        <h1 className="text-2xl font-bold text-white tracking-wide">User Management</h1>
-                        <span className="flex items-center space-x-1.5 px-2.5 py-1 bg-[#6366F1]/10 border border-[#6366F1]/30 text-[#818CF8] rounded-full text-xs font-semibold">
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                            </svg>
-                            <span>Admin Only</span>
+                        <h1 className="text-2xl font-bold text-white tracking-tight">Gestión de usuarios</h1>
+                        <span className="text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full">
+                            Solo el staff y los administradores pueden invitar y gestionar usuarios
                         </span>
                     </div>
-                    <p className="text-xs text-gray-400 mt-1">
-                        Manage team access, roles, and permissions
-                    </p>
+                    <p className="text-xs text-gray-400 mt-1">Gestión del acceso, los roles y los permisos del equipo.</p>
                 </div>
-
-                <button
-                    onClick={() => setShowInviteModal(true)}
-                    className="flex items-center space-x-2 bg-[#6366F1] hover:bg-[#4F46E5] text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition shadow-lg shadow-[#6366F1]/20"
-                >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span>Invite Member</span>
-                </button>
+                {isAdmin && (
+                    <button 
+                        onClick={() => setShowInviteModal(true)}
+                        className="bg-[#FE2C55] hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-blue-600/10 self-start sm:self-center"
+                    >
+                        + Invitar miembro del equipo
+                    </button>
+                )}
             </div>
 
-            {/* Tarjetas de Métricas */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-[#161B22] border border-gray-800 rounded-2xl p-5 shadow-lg">
-                    <span className="text-2xl font-bold text-emerald-400 block">{totalUsers}</span>
-                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">TOTAL</span>
+            {/* Las 4 Tarjetas de Métricas de la Interfaz */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-4 flex flex-col justify-between h-24">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">TOTAL</span>
+                    <p className="text-2xl font-extrabold text-white tracking-tight">{totalUsers}</p>
                 </div>
-                <div className="bg-[#161B22] border border-gray-800 rounded-2xl p-5 shadow-lg">
-                    <span className="text-2xl font-bold text-purple-400 block">{adminCount}</span>
-                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">ADMINS</span>
+                <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-4 flex flex-col justify-between h-24">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">ADMINS</span>
+                    <p className="text-2xl font-extrabold text-purple-400 tracking-tight">{adminCount}</p>
                 </div>
-                <div className="bg-[#161B22] border border-gray-800 rounded-2xl p-5 shadow-lg">
-                    <span className="text-2xl font-bold text-blue-400 block">{activeCount}</span>
-                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">ACTIVE</span>
+                <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-4 flex flex-col justify-between h-24">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">ACTIVE</span>
+                    <p className="text-2xl font-extrabold text-emerald-400 tracking-tight">{activeCount}</p>
                 </div>
-                <div className="bg-[#161B22] border border-gray-800 rounded-2xl p-5 shadow-lg">
-                    <span className="text-2xl font-bold text-rose-500 block">{restrictedCount}</span>
-                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">RESTRICTED</span>
+                <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-4 flex flex-col justify-between h-24">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">RESTRICTED</span>
+                    <p className="text-2xl font-extrabold text-red-400 tracking-tight">{restrictedCount}</p>
                 </div>
             </div>
 
+            {/* Banner de error si falla la petición */}
             {error && (
-                <div className="p-4 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-sm">
+                <div className="p-4 bg-red-900/20 border border-red-800/60 text-red-400 rounded-xl text-sm font-medium">
                     {error}
                 </div>
             )}
 
-            {/* Tabla de Usuarios */}
-            <div className="bg-[#161B22] rounded-2xl border border-gray-800/80 overflow-hidden shadow-xl">
+            {/* Tabla Principal */}
+            <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="bg-[#0C1017]/50 border-b border-gray-800/80 text-[11px] font-semibold tracking-wider text-gray-400 uppercase">
-                                <th className="px-6 py-4">MEMBER</th>
-                                <th className="px-6 py-4">EMAIL</th>
-                                <th className="px-6 py-4">ROLE</th>
-                                <th className="px-6 py-4">JOINED</th>
-                                <th className="px-6 py-4">STATUS</th>
-                                <th className="px-6 py-4">ACCESS</th>
-                                <th className="px-6 py-4 text-right">PERMISSIONS</th>
+                            <tr className="border-b border-gray-800/60 bg-[#1f242c]/40 text-gray-400 text-[11px] font-semibold uppercase tracking-wider">
+                                <th className="px-6 py-3.5">MEMBER</th>
+                                <th className="px-6 py-3.5">EMAIL</th>
+                                <th className="px-6 py-3.5">ROLE</th>
+                                <th className="px-6 py-3.5">STATUS</th>
+                                <th className="px-6 py-3.5 text-center">ACTIONS</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-800/60 text-sm">
-                            {users.map((item, idx) => {
-                                const isActive = item.status === 'Active' || item.is_active === true;
-                                const avatarColor = avatarColors[idx % avatarColors.length];
-
-                                return (
-                                    <tr key={item.id} className="hover:bg-gray-800/30 transition-colors">
-                                        {/* Avatar e Iniciales + Nombre */}
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center space-x-3">
-                                                <div className={`w-9 h-9 rounded-xl border flex items-center justify-center font-bold text-xs ${avatarColor}`}>
-                                                    {getInitials(item.name)}
+                        <tbody className="divide-y divide-gray-800/40 text-sm">
+                            {users.length > 0 ? (
+                                users.map((u) => {
+                                    const isRestricted = u.status?.toLowerCase() === 'restricted';
+                                    return (
+                                        <tr key={u.id} className="hover:bg-[#1f242c]/20 transition-colors">
+                                            <td className="px-6 py-4 flex items-center space-x-3">
+                                                <div className="w-8 h-8 rounded-full bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-xs font-bold text-blue-400">
+                                                    {getInitials(u.name)}
                                                 </div>
-                                                <span className="font-semibold text-white">{item.name}</span>
-                                            </div>
-                                        </td>
-
-                                        {/* Email */}
-                                        <td className="px-6 py-4 font-mono text-xs text-gray-400">
-                                            {item.email}
-                                        </td>
-
-                                        {/* Role Badge */}
-                                        <td className="px-6 py-4">
-                                            <span className={`px-2.5 py-1 rounded-lg text-xs font-medium border ${
-                                                item.role?.toLowerCase() === 'admin'
-                                                    ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                                                    : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                                            }`}>
-                                                {item.role || 'Staff'}
-                                            </span>
-                                        </td>
-
-                                        {/* Fecha de registro */}
-                                        <td className="px-6 py-4 font-mono text-xs text-gray-400">
-                                            {item.joined || (item.created_at ? new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'Jan 2025')}
-                                        </td>
-
-                                        {/* Status Indicador */}
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center space-x-2">
-                                                <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-rose-500'}`}></span>
-                                                <span className={`text-xs font-semibold ${isActive ? 'text-emerald-400' : 'text-rose-500'}`}>
-                                                    {isActive ? 'Active' : 'Restricted'}
+                                                <span className="font-semibold text-white truncate max-w-[150px]">
+                                                    {u.name}
                                                 </span>
-                                            </div>
-                                        </td>
-
-                                        {/* Access Toggle Switch */}
-                                        <td className="px-6 py-4">
-                                            <button
-                                                type="button"
-                                                onClick={() => handleToggleAccess(item)}
-                                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                                                    isActive ? 'bg-emerald-500' : 'bg-gray-700'
-                                                }`}
-                                            >
-                                                <span
-                                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                                        isActive ? 'translate-x-6' : 'translate-x-1'
-                                                    }`}
-                                                />
-                                            </button>
-                                        </td>
-
-                                        {/* Botón de Cambiar Rol */}
-                                        <td className="px-6 py-4 text-right">
-                                            <button
-                                                onClick={() => handleChangeRole(item)}
-                                                className="px-3 py-1.5 border border-gray-800 hover:border-gray-700 bg-[#0C1017] text-gray-300 hover:text-white rounded-xl text-xs font-medium transition"
-                                            >
-                                                Change Role
-                                            </button>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                                            </td>
+                                            <td className="px-6 py-4 text-gray-400 truncate max-w-[180px]">{u.email}</td>
+                                            <td className="px-6 py-4">
+                                                <span className={`px-2 py-0.5 rounded text-xs font-semibold capitalize ${u.role?.toLowerCase() === 'admin' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/15' : 'bg-gray-700/30 text-gray-400 border border-gray-700/50'}`}>
+                                                    {u.role}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${isRestricted ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${isRestricted ? 'bg-red-500' : 'bg-emerald-500'}`}></span>
+                                                    <span>{isRestricted ? 'Restricted' : 'Active'}</span>
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-center space-x-2">
+                                                {isAdmin ? (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleToggleAccess(u)}
+                                                            className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs font-medium rounded-lg text-gray-300 transition"
+                                                        >
+                                                            {isRestricted ? 'Activate' : 'Restrict'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleChangeRole(u)}
+                                                            className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs font-medium rounded-lg text-gray-300 transition"
+                                                        >
+                                                            Change Role
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            disabled
+                                                            className="px-3 py-1 bg-gray-800/40 text-xs font-medium rounded-lg text-gray-600 cursor-not-allowed opacity-50"
+                                                        >
+                                                            Solo Admin
+                                                        </button>
+                                                        <button
+                                                            disabled
+                                                            className="px-3 py-1 bg-gray-800/40 text-xs font-medium rounded-lg text-gray-600 cursor-not-allowed opacity-50"
+                                                        >
+                                                            Solo Admin
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            ) : (
+                                <tr>
+                                    <td colSpan="5" className="px-6 py-8 text-center text-gray-400">
+                                        No se encontraron miembros en el equipo.
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            {/* Modal para Invitar Integrante */}
-            {showInviteModal && (
+            {/* Modal de Invitación */}
+            {showInviteModal && isAdmin && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-[#161B22] border border-gray-800 rounded-2xl p-6 max-w-md w-full shadow-2xl relative">
-                        <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-800">
+                    <div className="bg-[#161B22] border border-gray-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                        <div className="flex justify-between items-center border-b border-gray-800 pb-3">
                             <h2 className="text-lg font-bold text-white">Invite Team Member</h2>
                             <button
                                 onClick={() => setShowInviteModal(false)}
-                                className="text-gray-400 hover:text-white transition"
+                                className="text-gray-400 hover:text-white transition font-bold"
                             >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+                                ✕
                             </button>
                         </div>
 
                         {inviteError && (
-                            <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-400 px-3 py-2 rounded-xl text-xs">
+                            <div className="p-3 bg-red-900/20 border border-red-800/60 text-red-400 rounded-xl text-xs font-medium">
                                 {inviteError}
                             </div>
                         )}
 
                         <form onSubmit={handleInviteSubmit} className="space-y-4">
                             <div>
-                                <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
+                                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
                                     Full Name
                                 </label>
                                 <input
                                     type="text"
                                     required
-                                    placeholder="e.g. Sarah Chen"
                                     value={inviteData.name}
                                     onChange={(e) => setInviteData({ ...inviteData, name: e.target.value })}
-                                    className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#6366F1] transition"
+                                    className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+                                    placeholder="John Doe"
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
+                                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
                                     Email Address
                                 </label>
                                 <input
                                     type="email"
                                     required
-                                    placeholder="sarah.chen@chest.io"
                                     value={inviteData.email}
                                     onChange={(e) => setInviteData({ ...inviteData, email: e.target.value })}
-                                    className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#6366F1] transition"
+                                    className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+                                    placeholder="johndoe@example.com"
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
-                                    Role
+                                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                                    Role Type
                                 </label>
                                 <select
                                     value={inviteData.role}
                                     onChange={(e) => setInviteData({ ...inviteData, role: e.target.value })}
-                                    className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:border-[#6366F1] transition"
+                                    className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition font-medium"
                                 >
-                                    <option value="Staff">Staff</option>
-                                    <option value="Admin">Admin</option>
+                                    <option value="operator">Operator (Staff)</option>
+                                    <option value="admin">Administrator</option>
                                 </select>
                             </div>
 
-                            <div className="flex justify-end space-x-3 pt-3 border-t border-gray-800/80">
+                            <div className="flex justify-end space-x-3 pt-2 border-t border-gray-800">
                                 <button
                                     type="button"
                                     onClick={() => setShowInviteModal(false)}
-                                    className="px-4 py-2 border border-gray-800 text-gray-300 rounded-xl text-xs font-semibold hover:bg-gray-800/50 transition"
+                                    className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-xl text-xs font-semibold transition"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={inviteLoading}
-                                    className="px-4 py-2 bg-[#6366F1] text-white rounded-xl text-xs font-semibold hover:bg-[#4F46E5] disabled:opacity-50 transition shadow-lg shadow-[#6366F1]/20"
+                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition disabled:opacity-50"
                                 >
-                                    {inviteLoading ? 'Sending...' : 'Send Invitation'}
+                                    {inviteLoading ? 'Sending...' : 'Send Invite'}
                                 </button>
                             </div>
                         </form>

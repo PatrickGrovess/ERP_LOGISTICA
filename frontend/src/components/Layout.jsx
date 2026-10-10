@@ -43,7 +43,7 @@ const Layout = () => {
             )}
 
             {/* Sidebar / Barra Lateral Responsive */}
-            <aside className={`fixed lg:static inset-y-0 left-0 z-30 w-64 bg-[#0C1017] border-r border-gray-800/60 flex flex-col justify-between transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+            <aside className={`fixed lg:static inset-y-0 left-0 z-30 w-69 bg-[#0C1017] border-r border-gray-800/60 flex flex-col justify-between transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 }`}>
                 <div>
                     {/* Header del Sidebar con Logo y Botón de cierre móvil */}
@@ -185,6 +185,10 @@ const Layout = () => {
                             placeholder="Buscar en inventario, SKUs, usuarios..."
                             className="w-full pl-11 pr-4 py-2.5 bg-[#161B22] border border-gray-800 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#FE2C55] transition shadow-inner"
                         />
+                    </div>
+
+                    <div className="flex items-center space-x-3 sm:space-x-4 shrink-0">
+                        <span className="text-sm text-gray-400">Codigo del inventario : JDU73-IEH83-OH382</span>
                     </div>
 
                     {/* Perfil e Iconos del Header */}
