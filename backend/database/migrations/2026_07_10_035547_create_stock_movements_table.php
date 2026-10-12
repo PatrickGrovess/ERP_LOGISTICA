@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('stock_movements', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('tenant_id')->nullable()->constrained('tenants')->onDelete('cascade'); // Nullable si hay superadmins globales o asignación post-registro
             // Restricciones de llaves foráneas estrictas
             $table->foreignId('product_id')->constrained()->onDelete('restrict');
             $table->foreignId('location_id')->constrained()->onDelete('restrict');

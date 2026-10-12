@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('locations', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('tenant_id')->nullable()->constrained('tenants')->onDelete('cascade'); // Nullable si hay superadmins globales o asignación post-registro
             $table->string('warehouse_code', 20); // Ej: 'WH-A'
             $table->string('aisle', 10);          // Pasillo: '01'
             $table->string('shelf', 10);          // Estante: 'B'

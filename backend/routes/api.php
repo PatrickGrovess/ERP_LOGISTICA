@@ -16,17 +16,17 @@ Route::prefix("v1/auth")->group(function(){
     Route::middleware("auth:api")->get("me", [AuthController::class, 'me']);
 });
 
-// Rutas de inventario protegidas por el token jwt
+// Rutas de inventario protegidas por el token jwt y multi-tenancy automático
 Route::middleware("auth:api")->prefix("inventory")->group(function () {
 
-   // Tanto Admin como Operador pueden consultar
-    Route::middleware('role:admin,operator')->group(function () {
+    // Staff, Admin y Operador pueden consultar
+    Route::middleware('role:staff,admin,operator')->group(function () {
         Route::get('/movements', [StockController::class, 'index']);
         Route::get('/stock', [StockController::class, 'currentStock']);
     });
 
-    // Solo Admin puede registrar nuevos movimientos de stock
-    Route::middleware('role:admin')->group(function () {
+    // Staff y Admin pueden registrar nuevos productos y movimientos de stock
+    Route::middleware('role:staff,admin')->group(function () {
         Route::post('/products', [ProductController::class, 'store']);
         Route::post('/movements', [StockController::class, 'store']);
     });
