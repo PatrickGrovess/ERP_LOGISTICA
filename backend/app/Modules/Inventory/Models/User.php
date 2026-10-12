@@ -13,6 +13,7 @@ class User extends Authenticatable implements JWTSubject
     use HasFactory, Notifiable;
 
     protected $fillable = [
+        'tenant_id',
         'name',
         'email',
         'password',
@@ -24,6 +25,11 @@ class User extends Authenticatable implements JWTSubject
         'password',
         'remember_token',
     ];
+
+    public function tenant()
+    {
+        return $this->belongsTo(Tenant::class);
+    }
 
     public function getJWTIdentifier()
     {

@@ -7,15 +7,19 @@ use Illuminate\Database\Eloquent\Model;
 use App\Modules\Inventory\Models\User;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\Location;
+use App\Modules\Inventory\Models\Traits\BelongsToTenant;
+
 
 
 class StockMovement extends Model
 {
     use HasFactory;
+    use BelongsToTenant;
 
     protected $table = 'stock_movements';
 
     protected $fillable = [
+        'tenant_id',
         'product_id',
         'location_id',
         'user_id',
@@ -39,5 +43,10 @@ class StockMovement extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function tenant()
+    {
+        return $this->belongsTo(Tenant::class);
     }
 }
