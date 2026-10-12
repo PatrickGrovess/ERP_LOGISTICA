@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 
 const Users = () => {
     const { user } = useAuth();
-    const isAdmin = ['admin', 'owner'].includes(user?.role?.toLowerCase());
+    const isAdmin = ['staff', 'admin'].includes(user?.role?.toLowerCase());
 
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -324,8 +324,9 @@ const Users = () => {
                                     onChange={(e) => setInviteData({ ...inviteData, role: e.target.value })}
                                     className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition font-medium"
                                 >
-                                    <option value="operator">Operator (Staff)</option>
+                                    <option value="staff">Staff/Dueño</option>
                                     <option value="admin">Administrator</option>
+                                    <option value="operator">Operator</option>
                                 </select>
                             </div>
 

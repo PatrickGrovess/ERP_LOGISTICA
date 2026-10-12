@@ -35,7 +35,7 @@ function App() {
                 <Route path="/unauthorized" element={<Unauthorized />} />
 
                 {/* Rutas Protegidas dentro del Layout */}
-                <Route element={<ProtectedRoute allowedRoles={['admin', 'operator']} />}>
+                <Route element={<ProtectedRoute allowedRoles={['staff', 'admin', 'operator']} />}>
                     <Route element={<Layout />}>
                         <Route element={<FloatingLayout />}>
                             <Route path="/dashboard" element={<Dashboard />} />

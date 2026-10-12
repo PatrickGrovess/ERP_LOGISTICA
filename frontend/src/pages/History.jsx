@@ -121,7 +121,7 @@ const Inventory = () => {
                 </div>
 
                 {/* Botón visible solo para Administradores */}
-                {user?.role === 'admin' && (
+                {(user?.role === 'staff' || user?.role === 'admin') && (
                     <button
                         onClick={() => setShowModal(true)}
                         className="flex items-center space-x-2 bg-[#FE2C55] hover:bg-[#e02447] text-white px-4 py-2.5 rounded-xl text-sm font-medium transition shadow-lg shadow-[#FE2C55]/20"
@@ -194,8 +194,8 @@ const Inventory = () => {
                                         </td>
                                         <td className="px-6 py-4">
                                             <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${item.type === 'INBOUND'
-                                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                                    : 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
+                                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                                : 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
                                                 }`}>
                                                 <span className={`w-1.5 h-1.5 rounded-full ${item.type === 'INBOUND' ? 'bg-emerald-400' : 'bg-[#FE2C55]'}`}></span>
                                                 <span>{item.type === 'INBOUND' ? 'ENTRADA' : 'SALIDA'}</span>
@@ -267,7 +267,7 @@ const Inventory = () => {
                             </div>
 
                             {/* Desplegable de Ubicación */}
-                            <div>   
+                            <div>
                                 <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
                                     Ubicación
                                 </label>

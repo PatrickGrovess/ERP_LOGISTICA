@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 // Configuración de pestañas escalable
 const TABS = [
     { id: 'profile', label: 'Mi Cuenta', allowedRoles: ['*'] },
-    { id: 'system', label: 'Sistema', allowedRoles: ['admin', 'owner'] },
+    { id: 'system', label: 'Sistema', allowedRoles: ['staff'] },
     // Futuras pestañas:
     // { id: 'notifications', label: 'Notificaciones', allowedRoles: ['*'] },
     // { id: 'integrations', label: 'Integraciones', allowedRoles: ['admin', 'owner'] },
@@ -15,7 +15,7 @@ const Settings = () => {
     const [activeTab, setActiveTab] = useState('profile');
 
     // Verificar si el usuario es Admin u Owner
-    const isAdmin = ['admin', 'owner'].includes(user?.role?.toLowerCase());
+    const isAdmin = ['staff'].includes(user?.role?.toLowerCase());
 
     // Filtrar pestañas visibles según el rol del usuario
     const visibleTabs = TABS.filter(tab => 

@@ -1,12 +1,20 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import api from '../api/axios';
 
 const Layout = () => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    
+    // Estado para controlar la visibilidad del código de servidor (tipo contraseña)
+    const [showServerCode, setShowServerCode] = useState(false);
+
+    // Estados para los contadores dinámicos del menú
+    const [totalStock, setTotalStock] = useState(0);
+    const [totalUsers, setTotalUsers] = useState(0);
 
     const handleLogout = () => {
         logout();
@@ -16,6 +24,32 @@ const Layout = () => {
     // Cerrar sidebar al cambiar de ruta en móviles
     useEffect(() => {
         setIsSidebarOpen(false);
+    }, [location.pathname]);
+
+    // Cargar métricas o contadores rápidos para el menú lateral
+    useEffect(() => {
+        const fetchNavCounts = async () => {
+            try {
+                // Petición para obtener stock total
+                const stockRes = await api.get('v1/products');
+                const products = stockRes.data.data || stockRes.data;
+                if (Array.isArray(products)) {
+                    const stockSum = products.reduce((acc, item) => acc + (Number(item.stock) || 0), 0);
+                    setTotalStock(stockSum);
+                }
+
+                // Petición para obtener total de usuarios del tenant
+                const usersRes = await api.get('v1/users');
+                const usersList = usersRes.data.data || usersRes.data;
+                if (Array.isArray(usersList)) {
+                    setTotalUsers(usersList.length);
+                }
+            } catch (error) {
+                console.error('Error al cargar contadores del menú:', error);
+            }
+        };
+
+        fetchNavCounts();
     }, [location.pathname]);
 
     // Función auxiliar para determinar si un enlace está activo
@@ -43,8 +77,9 @@ const Layout = () => {
             )}
 
             {/* Sidebar / Barra Lateral Responsive */}
-            <aside className={`fixed lg:static inset-y-0 left-0 z-30 w-69 bg-[#0C1017] border-r border-gray-800/60 flex flex-col justify-between transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-                }`}>
+            <aside className={`fixed lg:static inset-y-0 left-0 z-30 w-69 bg-[#0C1017] border-r border-gray-800/60 flex flex-col justify-between transform transition-transform duration-300 ease-in-out ${
+                isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+            }`}>
                 <div>
                     {/* Header del Sidebar con Logo y Botón de cierre móvil */}
                     <div className="p-6 flex items-center justify-between border-b border-gray-800/40">
@@ -71,7 +106,7 @@ const Layout = () => {
                         </div>
                     </div>
 
-                    {/* Menú de Navegación */}
+                    {/* Menú de Navegación con Valores Dinámicos */}
                     <nav className="p-4 space-y-1">
                         <div className="px-3 pb-2 text-[11px] font-semibold tracking-wider text-gray-500 uppercase">
                             Main Menu
@@ -79,49 +114,65 @@ const Layout = () => {
 
                         <Link
                             to="/dashboard"
-                            className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${isActive('/dashboard')
+                            className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+                                isActive('/dashboard')
                                     ? 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
                                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
-                                }`}
+                            }`}
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                            </svg>
-                            <span>Metricas de Rendimiento</span>
+                            <div className="flex items-center space-x-3">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                                </svg>
+                                <span>Metricas de Rendimiento</span>
+                            </div>
                         </Link>
 
                         <Link
                             to="/stock"
-                            className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${isActive('/stock')
+                            className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+                                isActive('/stock')
                                     ? 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
                                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
-                                }`}
+                            }`}
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                            </svg>
-                            <span>Stock de Inventario</span>
+                            <div className="flex items-center space-x-3">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                </svg>
+                                <span>Stock de Inventario</span>
+                            </div>
+                            <span className="text-xs bg-[#161B22] text-gray-300 px-2 py-0.5 rounded-lg border border-gray-800">
+                                {totalStock}
+                            </span>
                         </Link>
 
                         <Link
                             to="/users"
-                            className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${isActive('/users')
+                            className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+                                isActive('/users')
                                     ? 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
                                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
-                                }`}
+                            }`}
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                            </svg>
-                            <span>Usuarios</span>
+                            <div className="flex items-center space-x-3">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                </svg>
+                                <span>Usuarios</span>
+                            </div>
+                            <span className="text-xs bg-[#161B22] text-gray-300 px-2 py-0.5 rounded-lg border border-gray-800">
+                                {totalUsers}
+                            </span>
                         </Link>
 
                         <Link
                             to="/history"
-                            className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${isActive('/history')
+                            className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+                                isActive('/history')
                                     ? 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
                                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
-                                }`}
+                            }`}
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -131,10 +182,11 @@ const Layout = () => {
 
                         <Link
                             to="/Configuration"
-                            className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${isActive('/Configuration')
+                            className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+                                isActive('/Configuration')
                                     ? 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
                                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
-                                }`}
+                            }`}
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -145,7 +197,7 @@ const Layout = () => {
                     </nav>
                 </div>
 
-                {/* Botón Cerrar Sesión en Sidebar (Sin el usuario duplicado) */}
+                {/* Botón Cerrar Sesión en Sidebar */}
                 <div className="p-4 border-t border-gray-800/60">
                     <button
                         onClick={handleLogout}
@@ -173,7 +225,7 @@ const Layout = () => {
                         </svg>
                     </button>
 
-                    {/* Buscador General (Más amplio y cómodo) */}
+                    {/* Buscador General */}
                     <div className="relative flex-1 max-w-xl">
                         <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-gray-500">
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -187,9 +239,32 @@ const Layout = () => {
                         />
                     </div>
 
-                    <div className="flex items-center space-x-3 sm:space-x-4 shrink-0">
-                        <span className="text-sm text-gray-400">Codigo del inventario : JDU73-IEH83-OH382</span>
-                    </div>
+                    {/* Sección exclusiva para Staff: Nombre de Empresa arriba y Código protegido abajo */}
+                    {user?.role === 'staff' && (
+                        <div className="hidden md:flex flex-col text-right shrink-0">
+                            <span className="text-xs font-bold text-white tracking-wide">
+                                {user?.tenant?.name || 'Mi Empresa'}
+                            </span>
+                            <div 
+                                onClick={() => setShowServerCode(!showServerCode)}
+                                className="cursor-pointer group flex items-center justify-end space-x-1.5 text-xs text-gray-400 mt-0.5"
+                                title="Haz clic para mostrar / ocultar código"
+                            >
+                                <span className="font-mono tracking-wider">
+                                    {showServerCode 
+                                        ? (user?.tenant?.server_code || 'JDU73-IEH83-OH382') 
+                                        : '•••••-•••••-•••••'}
+                                </span>
+                                <svg className="w-3.5 h-3.5 text-gray-500 group-hover:text-gray-300 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    {showServerCode ? (
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                    ) : (
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                    )}
+                                </svg>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Perfil e Iconos del Header */}
                     <div className="flex items-center space-x-3 sm:space-x-4 shrink-0">

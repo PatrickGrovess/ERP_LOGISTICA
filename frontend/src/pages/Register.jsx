@@ -1,17 +1,20 @@
 import { useState } from 'react';
-import { useAuth } from '../context/AuthContext.jsx'
-import { useNavigate } from 'react-router-dom'
-
+import { useAuth } from '../context/AuthContext.jsx';
+import { useNavigate } from 'react-router-dom';
 
 const Register = () => {
+    const [companyName, setCompanyName] = useState('');
+    const [serverCode, setServerCode] = useState('');
+    const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
-    const [name, setName] = useState('');
+    
+    // Por defecto inicia en 'staff' (Dueño), ya que este formulario es para crear la empresa
+    const [role, setRole] = useState('staff'); 
+    
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    // Estado para controlar únicamente la selección visual del rol
-    const [role, setRole] = useState('operator'); // Valor inicial: 'operator'
 
     const { register } = useAuth();
     const navigate = useNavigate();
@@ -19,23 +22,36 @@ const Register = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        setLoading(true);
 
-        // Validación local rápida antes de ir al servidor
-        if (password !== confirmPassword) {
-            setError('Las contraseñas no coinciden.');
-            setLoading(false);
+        // Validación estricta del formato del Código de Servidor (Ej. JDU73-IEH83-OH382)
+        const serverCodeRegex = /^[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}$/;
+        const formattedCode = serverCode.toUpperCase();
+
+        if (!serverCodeRegex.test(formattedCode)) {
+            setError('El código de servidor debe tener el formato exacto: ABC12-DEF34-GHI56 (bloques de 5 caracteres separados por guiones).');
             return;
         }
-        // Lógica de envío del formulario
-        // console.log("Formulario enviado con rol:", role);
-        // console.log("Datos del usuario:", { email, password, fullName, role });
+
+        if (password !== confirmPassword) {
+            setError('Las contraseñas no coinciden.');
+            return;
+        }
+
+        setLoading(true);
 
         try {
-            await register({ email, password, name, role });
+            // Enviamos los datos ajustados al backend multi-tenant
+            await register({
+                company_name: companyName,
+                server_code: formattedCode,
+                name,
+                email,
+                password,
+                role
+            });
             navigate('/login');
         } catch (error) {
-            const message = error.response?.data?.message || 'Error al registrar el usuario';
+            const message = error.response?.data?.message || 'Error al registrar la empresa';
             setError(message);
         } finally {
             setLoading(false);
@@ -48,9 +64,9 @@ const Register = () => {
 
                 {/* Header del Formulario */}
                 <div className="text-center">
-                    <h1 className="text-2xl font-bold text-white tracking-wide">Crear una Cuenta</h1>
+                    <h1 className="text-2xl font-bold text-[#FE2C55] uppercase tracking-wide">Crear registro para tu negocio</h1>
                     <p className="text-xs text-gray-400 mt-1.5">
-                        Ingresa tus datos para registrarte en la plataforma
+                        Registra tu organización y define tu código de servidor
                     </p>
                 </div>
 
@@ -62,39 +78,42 @@ const Register = () => {
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* Selector SIGN IN AS / TIPO DE CUENTA */}
-                    <div>
-                        <label className="block text-[11px] font-bold text-gray-400 mb-2 uppercase tracking-wider">
-                            SIGN IN AS
-                        </label>
-                        <div className="bg-[#0C1017] p-1.5 rounded-2xl border border-gray-800 flex items-center space-x-1">
-                            <button
-                                type="button"
-                                onClick={() => setRole('operator')}
-                                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${role === 'operator'
-                                    ? 'bg-[#FE2C55] text-black shadow-lg shadow-[#10B981]/20'
-                                    : 'text-gray-400 hover:text-white'
-                                    }`}
-                            >
-                                Operador / Admin
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setRole('owner')}
-                                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${role === 'owner'
-                                    ? 'bg-[#FE2C55] text-black shadow-lg shadow-[#10B981]/20'
-                                    : 'text-gray-400 hover:text-white'
-                                    }`}
-                            >
-                                Dueño
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Nombre Completo */}
+                    
+                    {/* Nombre de la Empresa */}
                     <div>
                         <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
-                            Nombre Completo
+                            Nombre de la Empresa
+                        </label>
+                        <input
+                            type="text"
+                            placeholder="Ej. Groyte S.A."
+                            className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55] transition"
+                            value={companyName}
+                            onChange={(e) => setCompanyName(e.target.value)}
+                            required
+                        />
+                    </div>
+
+                    {/* Código de Servidor Personalizado (Server Code) */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
+                            Código de Servidor (Server Code)
+                        </label>
+                        <input
+                            type="text"
+                            placeholder="Ej. JDU73-IEH83-OH382"
+                            className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55] transition uppercase"
+                            value={serverCode}
+                            onChange={(e) => setServerCode(e.target.value)}
+                            required
+                        />
+                        <p className="text-[10px] text-gray-500 mt-1">Formato requerido: XXXXX-XXXXX-XXXXX</p>
+                    </div>
+
+                    {/* Nombre Completo del Administrador / Staff */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
+                            Nombre del Administrador (Staff)
                         </label>
                         <input
                             type="text"
@@ -158,7 +177,7 @@ const Register = () => {
                             type="submit"
                             className="w-full py-3 bg-[#FE2C55] hover:bg-[#e02447] text-white rounded-xl text-xs font-bold uppercase tracking-wider disabled:opacity-50 transition shadow-lg shadow-[#FE2C55]/20"
                         >
-                            <span>{loading ? 'Registrando...' : 'Registrarse'}</span>
+                            <span>{loading ? 'Registrando empresa...' : 'Registrar Empresa y Cuenta'}</span>
                         </button>
                     </div>
                 </form>
@@ -166,7 +185,7 @@ const Register = () => {
                 {/* Footer del card */}
                 <div className="text-center pt-2 border-t border-gray-800/80">
                     <p className="text-xs text-gray-400">
-                        ¿Ya tienes una cuenta?{' '}
+                        ¿Ya tienes una cuenta o código de servidor?{' '}
                         <a href="/login" className="text-[#FE2C55] font-semibold hover:underline">
                             Iniciar sesión
                         </a>

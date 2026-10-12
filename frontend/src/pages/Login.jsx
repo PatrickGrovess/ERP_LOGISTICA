@@ -1,10 +1,13 @@
-import { useState } from 'react'
-import { useAuth } from '../context/AuthContext.jsx'
-import { useNavigate } from 'react-router-dom'
+import { useState } from 'react';
+import { useAuth } from '../context/AuthContext.jsx';
+import { useNavigate } from 'react-router-dom';
 
 const Login = () => {
-    const [email, setEmail] = useState("");
+    const [serverCode, setServerCode] = useState('');
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [role, setRole] = useState('staff'); // 'staff' u 'operator'
+
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -17,10 +20,15 @@ const Login = () => {
         setLoading(true);
 
         try {
-            await login({ email, password });
+            // Se envían todos los parámetros exigidos por el backend
+            await login({
+                server_code: serverCode.toUpperCase(),
+                email,
+                password,
+                role
+            });
             navigate('/dashboard');
         } catch (error) {
-            // console.error('Error al iniciar sesión:', error);
             const message = error.response?.data?.message || 'Error al iniciar sesión';
             setError(message);
         } finally {
@@ -40,7 +48,7 @@ const Login = () => {
                         </svg>
                     </div>
                     <h2 className="text-2xl font-bold tracking-tight text-white">
-                        Dashboard
+                        Iniciar Sesión
                     </h2>
                     <p className="text-sm text-gray-400">
                         Plataforma de gestión de inventario
@@ -55,7 +63,55 @@ const Login = () => {
                 )}
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="space-y-5">
+                <form onSubmit={handleSubmit} className="space-y-4">
+
+                    {/* Selector SIGN IN AS / TIPO DE ROL */}
+                    <div>
+                        <label className="block text-[11px] font-bold text-gray-400 mb-2 uppercase tracking-wider">
+                            SIGN IN AS
+                        </label>
+                        <div className="bg-[#0C1017] p-1.5 rounded-2xl border border-gray-800 flex items-center space-x-1">
+                            <button
+                                type="button"
+                                onClick={() => setRole('staff')}
+                                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${
+                                    role === 'staff'
+                                        ? 'bg-[#FE2C55] text-white shadow-lg shadow-[#FE2C55]/20'
+                                        : 'text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                Staff User (Dueño)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setRole('operator')}
+                                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${
+                                    role === 'operator'
+                                        ? 'bg-[#FE2C55] text-white shadow-lg shadow-[#FE2C55]/20'
+                                        : 'text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                Admin / Operador
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Server Code */}
+                    <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                            Código de Servidor (Server Code)
+                        </label>
+                        <input
+                            type="text"
+                            value={serverCode}
+                            onChange={(e) => setServerCode(e.target.value)}
+                            required
+                            className="w-full px-4 py-3 bg-[#0C1017] border border-gray-800 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-[#FE2C55] focus:ring-1 focus:ring-[#FE2C55] transition-all duration-200 uppercase"
+                            placeholder="Ej. BARRIO-01"
+                        />
+                    </div>
+
+                    {/* Email */}
                     <div>
                         <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
                             Correo
@@ -70,6 +126,7 @@ const Login = () => {
                         />
                     </div>
 
+                    {/* Password */}
                     <div>
                         <div className="flex justify-between items-center mb-2">
                             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400">
@@ -89,10 +146,11 @@ const Login = () => {
                         />
                     </div>
 
+                    {/* Submit Button */}
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-[#FE2C55] hover:bg-[#e02649] text-white font-medium py-3 px-4 rounded-xl transition duration-200 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-lg shadow-[#FE2C55]/20"
+                        className="w-full bg-[#FE2C55] hover:bg-[#e02649] text-white font-medium py-3 px-4 rounded-xl transition duration-200 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-lg shadow-[#FE2C55]/20 mt-2"
                     >
                         <span>{loading ? 'Ingresando...' : 'Iniciar sesión'}</span>
                         {!loading && (
@@ -102,6 +160,7 @@ const Login = () => {
                         )}
                     </button>
                 </form>
+
                 <div className="text-center space-y-3">
                     <p className="text-sm text-gray-400">
                          <a href="/register" className="text-[#FE2C55] hover:underline font-medium"><span className="text-gray-400">¿No tienes una cuenta? </span> Regístrate</a>
@@ -110,6 +169,6 @@ const Login = () => {
             </div>
         </div>
     );
-}
+};
 
 export default Login;
