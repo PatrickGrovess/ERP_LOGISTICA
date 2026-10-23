@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useLocation, useNavigate } from 'react-router-dom';
+import api from '../api/axios';
 
 const Login = () => {
     const location = useLocation();
@@ -11,10 +12,31 @@ const Login = () => {
 
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [recoveringServerCode, setRecoveringServerCode] = useState(false);
+    const [recoveryMessage, setRecoveryMessage] = useState('');
 
     const { login } = useAuth();
     const navigate = useNavigate();
     const registered = location.state?.registered === true;
+
+    const handleRecoverServerCode = async () => {
+        setRecoveryMessage('');
+        if (!email.trim() || !password) {
+            setRecoveryMessage('Escribe el correo y la contraseña del dueño para verificar la cuenta.');
+            return;
+        }
+
+        setRecoveringServerCode(true);
+        try {
+            const response = await api.post('v1/auth/recover-server-code', { email, password });
+            setServerCode(response.data.server_code);
+            setRecoveryMessage(`Cuenta verificada. Tu código de servidor es: ${response.data.server_code}`);
+        } catch (recoveryError) {
+            setRecoveryMessage(recoveryError.response?.data?.message || 'No se pudo verificar la cuenta con esos datos.');
+        } finally {
+            setRecoveringServerCode(false);
+        }
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -174,6 +196,25 @@ const Login = () => {
                         )}
                     </button>
                 </form>
+
+                {role === 'staff' && (
+                    <div className="text-center space-y-2">
+                        <button
+                            type="button"
+                            onClick={handleRecoverServerCode}
+                            disabled={recoveringServerCode}
+                            className="text-xs text-[#FE2C55] hover:underline disabled:opacity-50"
+                        >
+                            {recoveringServerCode ? 'Verificando cuenta...' : '¿Olvidaste el código de servidor?'}
+                        </button>
+                        {recoveryMessage && (
+                            <p className={`text-xs rounded-xl px-3 py-2 ${recoveryMessage.startsWith('Cuenta verificada') ? 'text-emerald-300 bg-emerald-500/10' : 'text-amber-300 bg-amber-500/10'}`}>
+                                {recoveryMessage}
+                            </p>
+                        )}
+                        <p className="text-[10px] text-gray-500">Se verifica con el correo y la contraseña del dueño. Máximo 5 intentos por minuto.</p>
+                    </div>
+                )}
 
                 <div className="text-center space-y-3">
                     <p className="text-sm text-gray-400">

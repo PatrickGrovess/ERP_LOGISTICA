@@ -22,9 +22,9 @@ class EloquentStockMovementRepository implements StockMovementRepositoryInterfac
         ]);
     }
 
-    public function getCurrentStock(int $tenantId, int $productId, int $locationId): int
+    public function getCurrentStock(int $tenantId, int $productId, int $locationId): float
     {
-        return (int) DB::table('stock_movements')
+        return (float) DB::table('stock_movements')
             ->where('tenant_id', $tenantId)
             ->where('product_id', $productId)
             ->where('location_id', $locationId)

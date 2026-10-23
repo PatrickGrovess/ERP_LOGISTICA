@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Modules\Inventory\Models\Tenant;
 use App\Modules\Inventory\Models\User;
+use App\Modules\Inventory\Models\ProductCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -49,6 +50,17 @@ class AuthController extends Controller
                 'role' => 'staff',
                 'status' => 'active',
             ]);
+
+            $now = now();
+            DB::table('product_categories')->insert(array_map(
+                fn (string $categoryName) => [
+                    'tenant_id' => $tenant->id,
+                    'name' => $categoryName,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ],
+                ProductCategory::DEFAULT_NAMES
+            ));
 
             return [$tenant, $user];
         });
@@ -173,6 +185,39 @@ class AuthController extends Controller
                 'type'  => 'bearer',
             ]
         ], 200);
+    }
+
+    public function recoverServerCode(Request $request)
+    {
+        $request->merge(['email' => strtolower(trim((string) $request->input('email')))]);
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+            'password' => ['required', 'string', 'max:255'],
+        ]);
+
+        $user = User::where('email', $validated['email'])
+            ->where('role', 'staff')
+            ->with('tenant')
+            ->first();
+
+        if (
+            !$user
+            || $user->status !== 'active'
+            || !$user->tenant
+            || in_array($user->tenant->status, ['suspended', 'cancelled'], true)
+            || !Hash::check($validated['password'], $user->password)
+        ) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No se pudo verificar la cuenta con esos datos.',
+            ], 401);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Cuenta verificada.',
+            'server_code' => $user->tenant->server_code,
+        ]);
     }
 
     public function me()

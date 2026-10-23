@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
+import { getInventoryUnitLabel, isDiscreteInventoryUnit } from '../constants/inventory';
 
 const Inventory = () => {
     const location = useLocation();
@@ -11,16 +12,14 @@ const Inventory = () => {
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState(location.state?.searchQuery || '');
 
-    // Estados para los selectores y existencias del modal
+    // Productos y existencias para el formulario de movimientos
     const [productsList, setProductsList] = useState([]);
-    const [locationsList, setLocationsList] = useState([]);
     const [stockSummary, setStockSummary] = useState([]);
 
     // Estado del modal de creación
     const [showModal, setShowModal] = useState(false);
     const [formData, setFormData] = useState({
         product_id: '',
-        location_id: '',
         type: 'INBOUND', // 'INBOUND' o 'OUTBOUND'
         quantity: 1
     });
@@ -39,32 +38,26 @@ const Inventory = () => {
         }
     };
 
-    // Cargar listas de productos, ubicaciones y existencias de stock actuales
+    // Cargar productos y existencias actuales; el servidor resuelve la ubicación.
     const fetchOptions = async () => {
         try {
-            const [prodRes, locRes, stockRes] = await Promise.all([
+            const [prodRes, stockRes] = await Promise.all([
                 api.get('/inventory/products'),
-                api.get('/inventory/locations'),
                 api.get('/inventory/stock')
             ]);
 
             const prods = Array.isArray(prodRes.data) ? prodRes.data : (prodRes.data?.data || []);
-            const locs = Array.isArray(locRes.data) ? locRes.data : (locRes.data?.data || []);
             const stocks = Array.isArray(stockRes.data) ? stockRes.data : (stockRes.data?.data || []);
 
             setProductsList(prods);
-            setLocationsList(locs);
             setStockSummary(stocks);
 
-            // Asignar primer elemento por defecto si existen
+            // Seleccionar un producto inicial; no se solicita ubicación al usuario.
             if (prods.length > 0) {
                 const firstProdId = prods[0].id;
-                const matchedStock = stocks.find(s => Number(s.product_id) === Number(firstProdId));
-                
                 setFormData(prev => ({
                     ...prev,
                     product_id: firstProdId,
-                    location_id: matchedStock?.location_id || (locs.length > 0 ? locs[0].id : '')
                 }));
             }
         } catch (err) {
@@ -81,25 +74,21 @@ const Inventory = () => {
         setSearchTerm(location.state?.searchQuery || '');
     }, [location.key]);
 
-    // Calcular stock actual y ubicación automática del producto seleccionado
+    // Sumar existencias del producto en todas sus ubicaciones.
     const selectedProductStockInfo = useMemo(() => {
-        if (!formData.product_id) return { currentStock: 0, locationId: '' };
-        const found = stockSummary.find(s => Number(s.product_id) === Number(formData.product_id)
-            && Number(s.location_id) === Number(formData.location_id));
+        if (!formData.product_id) return { currentStock: 0 };
+        const currentStock = stockSummary
+            .filter((row) => Number(row.product_id) === Number(formData.product_id))
+            .reduce((total, row) => total + Number(row.current_stock || 0), 0);
         return {
-            currentStock: Number(found?.current_stock || 0),
-            locationId: found?.location_id || ''
+            currentStock,
         };
-    }, [formData.product_id, formData.location_id, stockSummary]);
+    }, [formData.product_id, stockSummary]);
 
-    // Manejar cambio de producto para autoseleccionar su ubicación asociada en segundo plano
+    const selectedProduct = productsList.find((product) => Number(product.id) === Number(formData.product_id));
+
     const handleProductChange = (productId) => {
-        const found = stockSummary.find(s => Number(s.product_id) === Number(productId));
-        setFormData(prev => ({
-            ...prev,
-            product_id: productId,
-            location_id: found?.location_id || locationsList[0]?.id || ''
-        }));
+        setFormData((prev) => ({ ...prev, product_id: productId }));
     };
 
     // Filtrar movimientos en tiempo real con el buscador
@@ -107,10 +96,11 @@ const Inventory = () => {
         return movements.filter(item => {
             const productName = item.product?.name?.toLowerCase() || '';
             const productSku = item.product?.sku?.toLowerCase() || '';
+            const categoryName = item.product?.category?.name?.toLowerCase() || '';
             const warehouse = item.location?.warehouse_code?.toLowerCase() || '';
             const query = searchTerm.toLowerCase().trim();
 
-            return productName.includes(query) || productSku.includes(query) || warehouse.includes(query);
+            return productName.includes(query) || productSku.includes(query) || categoryName.includes(query) || warehouse.includes(query);
         });
     }, [movements, searchTerm]);
 
@@ -123,7 +113,6 @@ const Inventory = () => {
         try {
             await api.post('/inventory/movements', {
                 product_id: Number(formData.product_id),
-                location_id: Number(formData.location_id),
                 quantity: Number(formData.quantity),
                 type: formData.type
             });
@@ -131,10 +120,8 @@ const Inventory = () => {
             setShowModal(false);
             if (productsList.length > 0) {
                 const firstProdId = productsList[0].id;
-                const matchedStock = stockSummary.find(s => Number(s.product_id) === Number(firstProdId));
                 setFormData({
                     product_id: firstProdId,
-                    location_id: matchedStock?.location_id || (locationsList[0]?.id || ''),
                     type: 'INBOUND',
                     quantity: 1
                 });
@@ -187,7 +174,7 @@ const Inventory = () => {
                             type="text"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            placeholder="Buscar por producto, SKU, almacén..."
+                            placeholder="Buscar por producto, SKU, catálogo o almacén..."
                             className="w-full sm:w-64 pl-9 pr-4 py-2.5 bg-[#161B22] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#FE2C55] transition"
                         />
                     </div>
@@ -252,6 +239,9 @@ const Inventory = () => {
                                                             SKU: {item.product.sku}
                                                         </span>
                                                     )}
+                                                    {item.product?.category?.name && (
+                                                        <span className="block text-[10px] text-sky-300/80">{item.product.category.name}</span>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <span className="font-mono text-gray-400">ID: #{item.product_id}</span>
@@ -275,7 +265,7 @@ const Inventory = () => {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 font-semibold text-gray-200">
-                                            {item.type === 'INBOUND' ? `+${item.quantity}` : `-${item.quantity}`}
+                                            {item.type === 'INBOUND' ? '+' : '−'}{new Intl.NumberFormat('es-CO', { maximumFractionDigits: 3 }).format(Number(item.quantity))} {getInventoryUnitLabel(item.product?.unit_of_measure)}
                                         </td>
                                         <td className="px-6 py-4 text-xs text-gray-400">
                                             {item.user?.name || item.user?.username || '-'}
@@ -331,38 +321,23 @@ const Inventory = () => {
                                     <option value="" disabled>Seleccione un producto...</option>
                                     {productsList.map((prod) => (
                                         <option key={prod.id} value={prod.id}>
-                                            {prod.name} {prod.sku ? `(${prod.sku})` : ''}
+                                            {prod.name} {prod.sku ? `(${prod.sku})` : ''} {prod.category?.name ? `· ${prod.category.name}` : ''}
                                         </option>
                                     ))}
                                 </select>
                             </div>
 
-                            {/* Indicador de Stock Actual en Almacén */}
+                            {/* Indicador de stock total del producto */}
                             <div className="bg-gray-900/60 border border-gray-800 px-3.5 py-2 rounded-xl flex items-center justify-between text-xs">
-                                <span className="text-gray-400 font-medium">Stock disponible actual:</span>
+                                <span className="text-gray-400 font-medium">Stock disponible total:</span>
                                 <span className="text-[#0DFC00] font-bold font-mono text-sm">
-                                    {selectedProductStockInfo.currentStock} unidades
+                                    {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 3 }).format(selectedProductStockInfo.currentStock)} {getInventoryUnitLabel(selectedProduct?.unit_of_measure)}
                                 </span>
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
-                                    Ubicación
-                                </label>
-                                <select
-                                    required
-                                    value={formData.location_id}
-                                    onChange={(e) => setFormData({ ...formData, location_id: e.target.value })}
-                                    className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:border-[#FE2C55] transition cursor-pointer"
-                                >
-                                    <option value="" disabled>Seleccione una ubicación...</option>
-                                    {locationsList.map((location) => (
-                                        <option key={location.id} value={location.id}>
-                                            {location.warehouse_code} · {location.aisle}-{location.shelf}-{location.level}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                            <p className="text-[11px] text-gray-500 bg-gray-900/40 border border-gray-800/70 rounded-xl px-3.5 py-2">
+                                La ubicación se asigna automáticamente según el producto y el tipo de movimiento.
+                            </p>
 
                             {/* Tipo de Movimiento */}
                             <div>
@@ -386,7 +361,8 @@ const Inventory = () => {
                                 </label>
                                 <input
                                     type="number"
-                                    min="1"
+                                    min={isDiscreteInventoryUnit(selectedProduct?.unit_of_measure) ? '1' : '0.001'}
+                                    step={isDiscreteInventoryUnit(selectedProduct?.unit_of_measure) ? '1' : '0.001'}
                                     required
                                     value={formData.quantity}
                                     onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}

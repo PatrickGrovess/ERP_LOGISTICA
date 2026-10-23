@@ -27,6 +27,7 @@ class Tenant extends Model
     {
         return [
             'low_stock_threshold' => 'integer',
+            'max_movements' => 'integer',
             'auto_notifications' => 'boolean',
         ];
     }

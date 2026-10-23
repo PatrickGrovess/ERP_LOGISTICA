@@ -5,11 +5,14 @@ use App\Http\Controllers\Controller;
 use App\Modules\Inventory\Requests\StoreStockMovementRequest;
 use App\Modules\Inventory\DTOs\StockMovementDTO;
 use App\Modules\Inventory\Models\StockMovement;
+use App\Modules\Inventory\Models\InventoryActivity;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\Location;
 use App\Modules\Inventory\Models\Tenant;
 use App\Modules\Inventory\Services\StockService;
 use App\Modules\Inventory\Services\InsufficientStockException;
+use App\Modules\Inventory\Services\MovementLimitReachedException;
+use App\Modules\Inventory\Services\InvalidMovementQuantityException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +40,16 @@ class StockController extends Controller
                 'status' => 'error',
                 'message' => $exception->getMessage(),
             ], 409);
+        } catch (MovementLimitReachedException $exception) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ], 409);
+        } catch (InvalidMovementQuantityException $exception) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ], 422);
         }
 
         return response()->json([
@@ -52,6 +65,7 @@ class StockController extends Controller
         $request->merge([
             'sku' => strtoupper(trim((string) $request->input('sku'))),
             'warehouse_code' => strtoupper(trim((string) $request->input('warehouse_code'))),
+            'storage_condition' => $request->input('storage_condition', 'ambient'),
         ]);
         $validated = $request->validate([
             'sku' => [
@@ -59,50 +73,89 @@ class StockController extends Controller
                 Rule::unique('products', 'sku')->where(fn ($query) => $query->where('tenant_id', $tenantId)),
             ],
             'name' => ['required', 'string', 'max:255'],
+            'category_id' => [
+                'required', 'integer',
+                Rule::exists('product_categories', 'id')->where(fn ($query) => $query->where('tenant_id', $tenantId)),
+            ],
             'unit_of_measure' => ['required', 'string', 'max:50'],
-            'unit_price' => ['required', 'numeric', 'min:0', 'max:99999999.99'],
+            'unit_price' => ['required', 'decimal:0,2', 'min:0', 'max:99999999.99'],
+            'storage_condition' => ['required', Rule::in(['ambient', 'refrigerated', 'frozen', 'special'])],
+            'storage_notes' => ['nullable', 'string', 'max:1000', 'required_if:storage_condition,special'],
             'warehouse_code' => ['required', 'string', 'max:20'],
             'aisle' => ['required', 'string', 'max:10'],
             'shelf' => ['required', 'string', 'max:10'],
             'level' => ['required', 'string', 'max:10'],
-            'quantity' => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'quantity' => ['required', 'numeric', 'gt:0', 'decimal:0,3', 'max:999999999.999'],
             'reference_type' => ['nullable', 'string', 'in:ORDER,INVOICE,MANUAL_ADJUSTMENT'],
         ]);
 
-        $result = DB::transaction(function () use ($tenantId, $request, $validated) {
-            $tenant = Tenant::whereKey($tenantId)->lockForUpdate()->firstOrFail();
-            if (Product::where('tenant_id', $tenantId)->count() >= $tenant->max_products) {
-                abort(409, 'Se alcanzó el límite de productos de este plan.');
-            }
+        try {
+            $result = DB::transaction(function () use ($tenantId, $request, $validated) {
+                $tenant = Tenant::whereKey($tenantId)->lockForUpdate()->firstOrFail();
+                if (Product::where('tenant_id', $tenantId)->count() >= $tenant->max_products) {
+                    abort(409, 'Se alcanzó el límite de productos de este plan.');
+                }
 
-            $product = Product::create([
-                'tenant_id' => $tenantId,
-                'sku' => $validated['sku'],
-                'name' => $validated['name'],
-                'unit_of_measure' => $validated['unit_of_measure'],
-                'unit_price' => $validated['unit_price'],
-            ]);
+                $product = Product::create([
+                    'tenant_id' => $tenantId,
+                    'category_id' => $validated['category_id'] ?? null,
+                    'sku' => $validated['sku'],
+                    'name' => $validated['name'],
+                    'unit_of_measure' => $validated['unit_of_measure'],
+                    'unit_price' => $validated['unit_price'],
+                    'storage_condition' => $validated['storage_condition'],
+                    'storage_notes' => $validated['storage_notes'] ?? null,
+                ]);
+                InventoryActivity::create([
+                    'tenant_id' => $tenantId,
+                    'user_id' => $request->user('api')->id,
+                    'product_id' => $product->id,
+                    'action' => 'product_created',
+                    'details' => [
+                        'actor_name' => $request->user('api')->name,
+                        'product_name' => $product->name,
+                        'sku' => $product->sku,
+                        'category_name' => $product->category?->name,
+                        'unit_of_measure' => $product->unit_of_measure,
+                        'unit_price' => (string) $product->unit_price,
+                        'storage_condition' => $product->storage_condition,
+                        'storage_notes' => $product->storage_notes,
+                    ],
+                ]);
 
-            $location = Location::firstOrCreate([
-                'tenant_id' => $tenantId,
-                'warehouse_code' => $validated['warehouse_code'],
-                'aisle' => $validated['aisle'],
-                'shelf' => $validated['shelf'],
-                'level' => $validated['level'],
-            ]);
+                $location = Location::firstOrCreate([
+                    'tenant_id' => $tenantId,
+                    'warehouse_code' => $validated['warehouse_code'],
+                    'aisle' => $validated['aisle'],
+                    'shelf' => $validated['shelf'],
+                    'level' => $validated['level'],
+                ]);
 
-            $movement = $this->stockService->registerMovement(new StockMovementDTO(
-                tenantId: $tenantId,
-                productId: $product->id,
-                locationId: $location->id,
-                userId: $request->user('api')->id,
-                type: 'INBOUND',
-                quantity: (int) $validated['quantity'],
-                referenceType: $validated['reference_type'] ?? 'MANUAL_ADJUSTMENT',
-            ));
+                $product->update(['default_location_id' => $location->id]);
 
-            return compact('product', 'location', 'movement');
-        });
+                $movement = $this->stockService->registerMovement(new StockMovementDTO(
+                    tenantId: $tenantId,
+                    productId: $product->id,
+                    locationId: $location->id,
+                    userId: $request->user('api')->id,
+                    type: 'INBOUND',
+                    quantity: (float) $validated['quantity'],
+                    referenceType: $validated['reference_type'] ?? 'MANUAL_ADJUSTMENT',
+                ));
+
+                return compact('product', 'location', 'movement');
+            });
+        } catch (MovementLimitReachedException $exception) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ], 409);
+        } catch (InvalidMovementQuantityException $exception) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ], 422);
+        }
 
         return response()->json([
             'status' => 'success',
@@ -119,7 +172,11 @@ class StockController extends Controller
     {
         $tenantId = auth('api')->user()->tenant_id;
         $movements = StockMovement::where('tenant_id', $tenantId)
-            ->with(['product', 'location', 'user'])
+            ->with([
+                'product' => fn ($query) => $query->withTrashed()->with('category'),
+                'location',
+                'user',
+            ])
             ->latest()
             ->get();
 
@@ -131,6 +188,18 @@ class StockController extends Controller
         $stock = $this->stockService->getCurrentStock(auth('api')->user()->tenant_id);
 
         return response()->json(['status' => 'success', 'data' => $stock]);
+    }
+
+    public function activity(Request $request): JsonResponse
+    {
+        $activities = InventoryActivity::where('tenant_id', $request->user('api')->tenant_id)
+            ->with('user')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get();
+
+        return response()->json(['status' => 'success', 'data' => $activities]);
     }
 
 }

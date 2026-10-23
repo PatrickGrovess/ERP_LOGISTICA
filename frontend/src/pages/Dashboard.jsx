@@ -141,7 +141,7 @@ const Dashboard = () => {
                     </div>
                     <div>
                         <p className="text-3xl font-extrabold text-[#0DFC00] tracking-tight">
-                            {new Intl.NumberFormat('es-CO', { style: 'currency', currency: tenant?.currency || 'USD' }).format(totalInventoryValue)}
+                            {new Intl.NumberFormat('es-CO', { style: 'currency', currency: tenant?.currency || 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalInventoryValue)}
                         </p>
                         <p className="text-xs font-medium text-gray-400 flex items-center space-x-1 mt-1">
                             <span>Valor total de los productos</span>

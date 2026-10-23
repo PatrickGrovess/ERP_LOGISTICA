@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
+import { getInventoryUnitLabel } from '../constants/inventory';
 
 const Layout = () => {
     const { user, tenant, logout } = useAuth();
@@ -14,6 +15,7 @@ const Layout = () => {
 
     // Estado para controlar la visibilidad del código de servidor (tipo contraseña)
     const [showServerCode, setShowServerCode] = useState(false);
+    const [serverCodeCopied, setServerCodeCopied] = useState(false);
 
     // Estado para la búsqueda global en el header
     const [searchQuery, setSearchQuery] = useState('');
@@ -23,6 +25,7 @@ const Layout = () => {
     const [totalUsers, setTotalUsers] = useState(0);
     const [totalMovements, setTotalMovements] = useState(0);
     const [lowStockItems, setLowStockItems] = useState([]);
+    const [recentActivities, setRecentActivities] = useState([]);
 
     const handleLogout = async () => {
         await logout();
@@ -69,6 +72,10 @@ const Layout = () => {
                 if (Array.isArray(movementsList)) {
                     setTotalMovements(movementsList.length);
                 }
+
+                const activityRes = await api.get('/inventory/activity');
+                const activityList = Array.isArray(activityRes.data) ? activityRes.data : (activityRes.data?.data || []);
+                if (Array.isArray(activityList)) setRecentActivities(activityList);
             } catch (error) {
                 console.error('Error al cargar contadores del menú:', error);
             }
@@ -76,6 +83,40 @@ const Layout = () => {
 
         fetchNavCounts();
     }, [location.pathname, tenant?.low_stock_threshold, user?.role]);
+
+    useEffect(() => {
+        if (!isNotificationsOpen) return undefined;
+
+        let isActive = true;
+        const refreshNotifications = async () => {
+            try {
+                const [stockRes, activityRes] = await Promise.all([
+                    api.get('/inventory/stock'),
+                    api.get('/inventory/activity'),
+                ]);
+                const stockRows = Array.isArray(stockRes.data) ? stockRes.data : stockRes.data?.data;
+                const activityRows = Array.isArray(activityRes.data) ? activityRes.data : activityRes.data?.data;
+                const stocks = Array.isArray(stockRows) ? stockRows : [];
+                const activities = Array.isArray(activityRows) ? activityRows : [];
+
+                if (!isActive) return;
+                const byProduct = stocks.reduce((summary, item) => {
+                    const productId = String(item.product_id);
+                    if (!summary[productId]) summary[productId] = { ...item, current_stock: 0 };
+                    summary[productId].current_stock += Number(item.current_stock || 0);
+                    return summary;
+                }, {});
+                const threshold = Number(tenant?.low_stock_threshold ?? 10);
+                setLowStockItems(Object.values(byProduct).filter((item) => Number(item.current_stock) <= threshold));
+                setRecentActivities(activities);
+            } catch (error) {
+                console.error('Error al actualizar las notificaciones:', error);
+            }
+        };
+
+        refreshNotifications();
+        return () => { isActive = false; };
+    }, [isNotificationsOpen, tenant?.low_stock_threshold]);
 
     // Manejar búsqueda global
     const handleGlobalSearch = (e) => {
@@ -91,10 +132,39 @@ const Layout = () => {
         } else if (/^(movimientos?|historial)\b/i.test(query)) {
             path = '/history';
             filter = query.replace(/^(movimientos?|historial)\s*/i, '');
+        } else if (/^(productos?|sku|catalogo|catálogo|categor[ií]a)\b/i.test(query)) {
+            path = '/stock';
+            filter = query.replace(/^(productos?|sku|catalogo|catálogo|categor[ií]a)\s*/i, '');
         }
 
         navigate(path, { state: { searchQuery: filter } });
         setSearchQuery('');
+    };
+
+    const handleCopyServerCode = async (event) => {
+        event.stopPropagation();
+        if (!tenant?.server_code) return;
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(tenant.server_code);
+            } else {
+                const temporaryInput = document.createElement('textarea');
+                temporaryInput.value = tenant.server_code;
+                temporaryInput.style.position = 'fixed';
+                temporaryInput.style.opacity = '0';
+                document.body.appendChild(temporaryInput);
+                temporaryInput.select();
+                const copied = document.execCommand('copy');
+                temporaryInput.remove();
+                if (!copied) throw new Error('El navegador rechazó la copia.');
+            }
+            setServerCodeCopied(true);
+            window.setTimeout(() => setServerCodeCopied(false), 1800);
+        } catch (error) {
+            console.error('No se pudo copiar el código del servidor:', error);
+            setServerCodeCopied(false);
+        }
     };
 
     // Función auxiliar para determinar si un enlace está activo
@@ -318,6 +388,22 @@ const Layout = () => {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                     )}
                                 </svg>
+                                <button
+                                    type="button"
+                                    onClick={handleCopyServerCode}
+                                    disabled={!tenant?.server_code}
+                                    aria-label={serverCodeCopied ? 'Código copiado' : 'Copiar código del servidor'}
+                                    title={serverCodeCopied ? 'Copiado' : 'Copiar código del servidor'}
+                                    className="ml-1 p-1 rounded text-gray-500 hover:text-white disabled:opacity-40"
+                                >
+                                    {serverCodeCopied ? (
+                                        <span className="text-[10px] text-emerald-400">Copiado</span>
+                                    ) : (
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M8 8V5.5A1.5 1.5 0 0 1 9.5 4h9A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H16M5.5 8h9A1.5 1.5 0 0 1 16 9.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 4 18.5v-9A1.5 1.5 0 0 1 5.5 8Z" />
+                                        </svg>
+                                    )}
+                                </button>
                             </div>
                         </div>
                     )}
@@ -326,14 +412,14 @@ const Layout = () => {
                     <div className="flex items-center space-x-3 sm:space-x-4 shrink-0">
                         <button
                             onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                            aria-label={`Avisos de stock bajo: ${lowStockItems.length}`}
+                            aria-label={`Notificaciones: ${lowStockItems.length} avisos de stock bajo y ${recentActivities.length} eventos recientes`}
                             aria-expanded={isNotificationsOpen}
                             className="relative p-2.5 text-gray-400 hover:text-white bg-[#161B22] border border-gray-800 rounded-xl transition cursor-pointer"
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 01-6 0v-1m6 0H9" />
                             </svg>
-                            {tenant?.auto_notifications && lowStockItems.length > 0 && (
+                            {((tenant?.auto_notifications && lowStockItems.length > 0) || recentActivities.length > 0) && (
                                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#FE2C55] rounded-full"></span>
                             )}
                         </button>
@@ -381,23 +467,88 @@ const Layout = () => {
                                 </button>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                                {!tenant?.auto_notifications ? (
-                                    <p className="text-xs text-gray-400">Los avisos automáticos están desactivados en la configuración de la empresa.</p>
-                                ) : lowStockItems.length === 0 ? (
-                                    <p className="text-xs text-gray-400">No hay productos por debajo del umbral de {tenant?.low_stock_threshold ?? 10} unidades.</p>
-                                ) : (
-                                    lowStockItems.map((item) => (
-                                        <button
-                                            key={item.product_id}
-                                            onClick={() => { setIsNotificationsOpen(false); navigate('/stock'); }}
-                                            className="w-full p-3.5 bg-[#0C1017] border border-amber-500/20 rounded-xl text-left hover:border-amber-500/50 transition"
-                                        >
-                                            <span className="block text-xs font-bold text-white">{item.product?.name || `Producto #${item.product_id}`}</span>
-                                            <span className="block text-[10px] text-amber-400 mt-1">Stock disponible: {item.current_stock} {item.product?.unit_of_measure || 'unidades'}</span>
-                                        </button>
-                                    ))
-                                )}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                                <section className="space-y-3">
+                                    <div>
+                                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Stock bajo</h4>
+                                        <p className="text-[10px] text-gray-500 mt-1">Umbral: {tenant?.low_stock_threshold ?? 10} unidades</p>
+                                    </div>
+                                    {!tenant?.auto_notifications ? (
+                                        <p className="text-xs text-gray-400">Los avisos automáticos de stock bajo están desactivados.</p>
+                                    ) : lowStockItems.length === 0 ? (
+                                        <p className="text-xs text-gray-400">No hay productos por debajo del umbral.</p>
+                                    ) : (
+                                        lowStockItems.map((item) => (
+                                            <button
+                                                key={item.product_id}
+                                                onClick={() => { setIsNotificationsOpen(false); navigate('/stock'); }}
+                                                className="w-full p-3.5 bg-[#0C1017] border border-amber-500/20 rounded-xl text-left hover:border-amber-500/50 transition"
+                                            >
+                                                <span className="block text-xs font-bold text-white">{item.product?.name || `Producto #${item.product_id}`}</span>
+                                                <span className="block text-[10px] text-amber-400 mt-1">Stock disponible: {item.current_stock} {item.product?.unit_of_measure || 'unidades'}</span>
+                                            </button>
+                                        ))
+                                    )}
+                                </section>
+
+                                <section className="space-y-3">
+                                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-sky-300">Actividad reciente</h4>
+                                    {recentActivities.length === 0 ? (
+                                        <p className="text-xs text-gray-400">Todavía no hay actividad registrada.</p>
+                                    ) : recentActivities.map((activity) => {
+                                        const details = activity.details || {};
+                                        const isInbound = activity.action === 'stock_in';
+                                        const isMovement = isInbound || activity.action === 'stock_out';
+                                        const actionLabels = {
+                                            stock_in: 'registró una entrada',
+                                            stock_out: 'registró una salida',
+                                            product_created: 'creó un producto',
+                                            product_updated: 'actualizó un producto',
+                                            product_deleted: 'archivó un producto',
+                                        };
+                                        const changedFieldNames = {
+                                            sku: 'SKU',
+                                            name: 'nombre',
+                                            description: 'descripción',
+                                            category_id: 'catálogo',
+                                            unit_of_measure: 'unidad de medida',
+                                            unit_price: 'precio',
+                                            storage_condition: 'conservación',
+                                            storage_notes: 'instrucciones de conservación',
+                                        };
+                                        const productName = details.product_name || `Producto #${activity.product_id}`;
+                                        const productReference = `${details.sku ? `${productName} · SKU ${details.sku}` : productName}${details.category_name ? ` · ${details.category_name}` : ''}`;
+                                        const movementSummary = `${details.quantity} ${getInventoryUnitLabel(details.unit_of_measure)} de ${productName}`;
+                                        const changeSummary = (details.changed_fields || []).map((field) => {
+                                            const fieldName = changedFieldNames[field] || field;
+                                            const previousValue = details.previous_values?.[field];
+                                            const newValue = details.new_values?.[field];
+                                            return previousValue === undefined ? fieldName : `${fieldName}: ${previousValue ?? '—'} → ${newValue ?? '—'}`;
+                                        }).join(' · ');
+                                        const activitySummary = isMovement
+                                            ? movementSummary
+                                            : productReference;
+                                        const activityContext = isMovement
+                                            ? `${isInbound ? 'Entrada' : 'Salida'} · ${details.location || 'ubicación desconocida'}`
+                                            : activity.action === 'product_updated' && changeSummary
+                                                ? `Cambios: ${changeSummary}`
+                                                : activity.action === 'product_deleted'
+                                                    ? 'Producto archivado; se conservan sus movimientos'
+                                                    : 'Catálogo de inventario';
+
+                                        return (
+                                            <button
+                                                key={activity.id}
+                                                onClick={() => { setIsNotificationsOpen(false); navigate(isMovement ? '/history' : '/stock'); }}
+                                                className="w-full p-3.5 bg-[#0C1017] border border-gray-800 rounded-xl text-left hover:border-sky-400/40 transition"
+                                            >
+                                                <span className="block text-xs font-semibold text-white">{details.actor_name || activity.user?.name || 'Usuario desconocido'} {actionLabels[activity.action] || 'actualizó el inventario'}</span>
+                                                <span className="block text-[11px] text-gray-300 mt-1">{activitySummary}</span>
+                                                <span className="block text-[10px] text-gray-500 mt-1">{activityContext} · {new Date(activity.created_at).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </section>
                             </div>
 
                             {/* Footer del Panel */}

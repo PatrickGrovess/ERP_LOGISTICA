@@ -24,12 +24,13 @@ class StoreStockMovementRequest extends FormRequest
                 Rule::exists((new Product())->getTable(), 'id')->where('tenant_id', $tenantId),
             ],
             'location_id' => [
-                'required',
+                'sometimes',
+                'nullable',
                 'integer',
                 Rule::exists((new Location())->getTable(), 'id')->where('tenant_id', $tenantId),
             ],
             'type' => ['required', 'string', 'in:INBOUND,OUTBOUND'],
-            'quantity'    => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'quantity'    => ['required', 'numeric', 'gt:0', 'decimal:0,3', 'max:999999999.999'],
             'reference_type' => ['nullable', 'string', 'in:ORDER,INVOICE,MANUAL_ADJUSTMENT'],
             'reference_id' => ['nullable', 'string', 'max:255'],
         ];

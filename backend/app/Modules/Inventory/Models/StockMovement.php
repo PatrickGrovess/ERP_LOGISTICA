@@ -18,6 +18,10 @@ class StockMovement extends Model
 
     protected $table = 'stock_movements';
 
+    protected $casts = [
+        'quantity' => 'decimal:3',
+    ];
+
     protected $fillable = [
         'tenant_id',
         'product_id',
