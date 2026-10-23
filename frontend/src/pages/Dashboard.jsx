@@ -11,8 +11,8 @@ const Dashboard = () => {
             try {
                 const response = await api.get('/inventory/stock');
                 // Sincronización con la respuesta del Backend
-                const dataReal = Array.isArray(response.data) 
-                    ? response.data 
+                const dataReal = Array.isArray(response.data)
+                    ? response.data
                     : (response.data.data || []);
                 setStockData(dataReal);
             } catch (err) {
@@ -47,18 +47,25 @@ const Dashboard = () => {
     // ==========================================
     // 📊 CÁLCULOS Y MÉTRICAS REALES
     // ==========================================
-    
+
     // 1. Total Unidades Físicas
     const totalUnitsInStock = stockData.reduce((acc, curr) => acc + Number(curr.current_stock || 0), 0);
-    
+
+    // 1.1. Valor Total del Inventario (Precio unitario * Stock actual de cada item)
+    const totalInventoryValue = stockData.reduce((acc, curr) => {
+        const price = Number(curr.product?.unit_price ?? curr.unit_price ?? 0);
+        const stock = Number(curr.current_stock || 0);
+        return acc + (price * stock);
+    }, 0);
+
     // 2. Alertas de Stock Bajo (Evalúa min_stock si existe, o umbral por defecto de 10)
     const lowStockItems = stockData.filter(item => {
         const current = Number(item.current_stock || 0);
         const limit = item.min_stock !== undefined ? Number(item.min_stock) : 10;
-        return current < limit;
+        return current <= limit;
     });
     const lowStockAlerts = lowStockItems.length;
-    
+
     // 3. SKUs o Referencias Únicas
     const totalReferences = stockData.length;
 
@@ -83,8 +90,8 @@ const Dashboard = () => {
 
     // 6. Estado General de Salud del Inventario (Calculado)
     const healthyStockCount = totalReferences - lowStockAlerts;
-    const healthPercentage = totalReferences > 0 
-        ? Math.round((healthyStockCount / totalReferences) * 100) 
+    const healthPercentage = totalReferences > 0
+        ? Math.round((healthyStockCount / totalReferences) * 100)
         : 100;
 
     return (
@@ -98,12 +105,36 @@ const Dashboard = () => {
             </div>
 
             {/* Tarjetas de Métricas Principales */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {/* Métricas 1: Unidades Totales */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                {/* Métricas 1: Valor total del inventario */}
                 <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-5 flex flex-col justify-between space-y-4">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                            Stock Físico Total
+                            Valor total del inventario
+                        </span>
+                        <div className="w-8 h-8 rounded-lg bg-[#0DFC00]/10 text-[#0DFC00] flex items-center justify-center">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://w3.org">
+                                <rect x="2" y="6" width="20" height="12" rx="2" strokeWidth="2" />
+                                <circle cx="12" cy="12" r="2" strokeWidth="2" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 12h.01M18 12h.01" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div>
+                        <p className="text-3xl font-extrabold text-[#0DFC00] tracking-tight">
+                            ${totalInventoryValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-xs font-medium text-gray-400 flex items-center space-x-1 mt-1">
+                            <span>Valor total de los productos</span>
+                        </p>
+                    </div>
+                </div>
+
+                {/* Métricas 2: stock fisico total */}
+                <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-5 flex flex-col justify-between space-y-4">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                            Inventario Físico Total
                         </span>
                         <div className="w-8 h-8 rounded-lg bg-[#FE2C55]/10 text-[#FE2C55] flex items-center justify-center">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -138,7 +169,7 @@ const Dashboard = () => {
                             {lowStockAlerts}
                         </p>
                         <p className="text-xs font-medium text-amber-400/90 flex items-center space-x-1 mt-1">
-                            <span>{lowStockAlerts === 1 ? '1 producto por debajo del mínimo' : `${lowStockAlerts} productos por debajo del mínimo`}</span>
+                            <span className="text-gray-400">{lowStockAlerts === 1 ? '1 producto por debajo del mínimo (10 o menos unidades)' : `${lowStockAlerts} productos por debajo del mínimo`}</span>
                         </p>
                     </div>
                 </div>
@@ -176,8 +207,8 @@ const Dashboard = () => {
                             <p className="text-xs text-gray-400">Relación de productos con stock adecuado vs. stock crítico</p>
                         </div>
                         <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${
-                            healthPercentage > 80 
-                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                            healthPercentage > 80
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                                 : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                         }`}>
                             {healthPercentage}% Saludable
@@ -191,13 +222,13 @@ const Dashboard = () => {
                             <span>{healthyStockCount} de {totalReferences} SKUs</span>
                         </div>
                         <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden flex">
-                            <div 
-                                style={{ width: `${healthPercentage}%` }} 
-                                className="bg-emerald-500 h-full transition-all duration-500" 
+                            <div
+                                style={{ width: `${healthPercentage}%` }}
+                                className="bg-emerald-500 h-full transition-all duration-500"
                             />
-                            <div 
-                                style={{ width: `${100 - healthPercentage}%` }} 
-                                className="bg-amber-500 h-full transition-all duration-500" 
+                            <div
+                                style={{ width: `${100 - healthPercentage}%` }}
+                                className="bg-amber-500 h-full transition-all duration-500"
                             />
                         </div>
                     </div>
@@ -231,16 +262,16 @@ const Dashboard = () => {
                 </div>
 
                 {/* Top Movers (Barras Dinámicas) */}
-                <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-6 flex flex-col justify-between space-y-4">
+                <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-6 flex flex-col justify-between space-y-4 overflow-hidden">
                     <div>
                         <h3 className="text-base font-bold text-white">Top 5 Más Despachados</h3>
                         <p className="text-xs text-gray-400">Productos con mayor cantidad de salidas (Outbound)</p>
                     </div>
 
-                    <div className="h-48 flex items-end justify-between gap-3 pt-4">
+                    <div className="h-48 flex items-end justify-between gap-2 pt-4 overflow-hidden">
                         {topMoversData.length > 0 ? (
                             topMoversData.map((bar, i) => (
-                                <div key={i} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
+                                <div key={i} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group min-w-0">
                                     <span className="text-[10px] font-semibold text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity">
                                         {bar.value}
                                     </span>
@@ -248,7 +279,7 @@ const Dashboard = () => {
                                         className="w-full bg-[#FE2C55] rounded-t-lg transition-all duration-300 hover:opacity-80"
                                         style={{ height: bar.h }}
                                     ></div>
-                                    <span className="text-[10px] text-gray-400 truncate w-full text-center" title={bar.name}>
+                                    <span className="text-[10px] text-gray-400 truncate w-full text-center block" title={bar.name}>
                                         {bar.name}
                                     </span>
                                 </div>

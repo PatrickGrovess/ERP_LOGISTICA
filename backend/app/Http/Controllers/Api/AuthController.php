@@ -16,9 +16,61 @@ class AuthController extends Controller
 {
     public function register(Request $request)
     {
+        // Verificamos si es un registro completo de empresa o si es la creación de un miembro por un Admin
+        $authUser = null;
+        try {
+            $token = JWTAuth::getToken();
+            if ($token) {
+                $authUser = JWTAuth::parseToken()->authenticate();
+            }
+        } catch (\Exception $e) {
+            // Si no hay token, es un registro público de empresa nueva
+        }
+
+        // Si ya hay un usuario autenticado (Admin/Staff), creamos un miembro del equipo
+        if ($authUser) {
+            $validator = Validator::make($request->all(), [
+                'fullName' => 'required|string|max:255',
+                'email'    => 'required|string|email|max:255|unique:users',
+                'password' => 'required|string|min:6',
+                'role'     => 'required|string|in:staff,admin,operator',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            try {
+                $user = User::create([
+                    'tenant_id' => $authUser->tenant_id, // Hereda la misma empresa/tenant
+                    'name'      => $request->fullName,
+                    'email'     => $request->email,
+                    'password'  => Hash::make($request->password),
+                    'role'      => $request->role,
+                ]);
+
+                return response()->json([
+                    'status'  => 'success',
+                    'message' => 'Miembro del equipo creado exitosamente',
+                    'user'    => $user
+                ], 201);
+
+            } catch (\Exception $e) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Error al crear el miembro del equipo',
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+        }
+
+        // Flujo original: Registro público de una nueva empresa (Tenant + Staff)
         $validator = Validator::make($request->all(), [
             'company_name' => 'required|string|max:255',
-            'server_code'  => 'required|string|unique:tenants,server_code|max:50', // <-- Ahora el Staff lo envía y es obligatorio/único
+            'server_code'  => 'required|string|unique:tenants,server_code|max:50',
             'name'         => 'required|string|max:255',
             'email'        => 'required|string|email|max:255|unique:users',
             'password'     => 'required|string|min:6',
@@ -34,17 +86,15 @@ class AuthController extends Controller
         try {
             DB::beginTransaction();
 
-            // 1. Crear el Tenant usando el server_code que ingresó el Staff
             $tenant = Tenant::create([
                 'name'         => $request->company_name,
-                'server_code'  => strtoupper($request->server_code), // Lo guardamos en mayúsculas por orden
+                'server_code'  => strtoupper($request->server_code),
                 'plan_type'    => null,
                 'status'       => 'trial',
                 'max_products' => 10,
                 'max_users'    => 3,
             ]);
 
-            // 2. Crear el usuario principal como 'staff' vinculado al tenant
             $user = User::create([
                 'tenant_id' => $tenant->id,
                 'name'      => $request->name,
@@ -84,7 +134,7 @@ class AuthController extends Controller
             'server_code' => 'required|string',
             'email'       => 'required|string|email',
             'password'    => 'required|string',
-            'role'        => 'required|string|in:staff,admin,operator', // <-- Validamos que envíe el rol seleccionado en la UI
+            'role'        => 'required|string|in:staff,admin,operator',
         ]);
 
         if ($validator->fails()) {
@@ -94,7 +144,6 @@ class AuthController extends Controller
             ], 422);
         }
 
-        // 1. Buscar el tenant por su código de servidor
         $tenant = Tenant::where('server_code', $request->server_code)->first();
 
         if (!$tenant) {
@@ -104,7 +153,6 @@ class AuthController extends Controller
             ], 404);
         }
 
-        // 2. Preparar credenciales asegurando el aislamiento del tenant
         $credentials = [
             'email'     => $request->email,
             'password'  => $request->password,
@@ -120,7 +168,6 @@ class AuthController extends Controller
 
         $user = JWTAuth::user();
 
-        // 3. Verificar que el rol del usuario coincida con el rol seleccionado en el formulario
         if ($user->role !== $request->role) {
             return response()->json([
                 'status'  => 'error',
@@ -142,7 +189,7 @@ class AuthController extends Controller
     public function me()
     {
         $user = JWTAuth::parseToken()->authenticate();
-        $tenant = $user->tenant; // Obtenemos el tenant asociado al usuario
+        $tenant = $user->tenant;
 
         return response()->json([
             'status' => 'success',

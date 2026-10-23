@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string("name");
             $table->text("description")->nullable();
             $table->string("unit_of_measure")->default("units");
+            $table->decimal('unit_price', 10, 2)->default(0.00);
             $table->timestamps();
             $table->softDeletes();
         });

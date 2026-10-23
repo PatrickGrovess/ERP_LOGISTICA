@@ -15,6 +15,7 @@ class Product extends Model
         "sku",
         "description",
         'unit_of_measure',
+        'unit_price',
         'price'
     ];
 

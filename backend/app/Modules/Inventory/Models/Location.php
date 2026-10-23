@@ -10,8 +10,10 @@ class Location extends Model
     use BelongsToTenant;
     protected $fillable = [
         'tenant_id',
-        "name",
-        "description",
+        'warehouse_code',
+        'aisle',
+        'shelf',
+        'level',
     ];
 
     public function tenant()

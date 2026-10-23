@@ -10,42 +10,29 @@ const Users = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    // Modal para invitar / crear usuario
+    // Modal para invitar / crear usuario con contraseña temporal
     const [showInviteModal, setShowInviteModal] = useState(false);
-    const [inviteData, setInviteData] = useState({ name: '', email: '', role: 'operator' });
+    const [inviteData, setInviteData] = useState({ 
+        name: '', 
+        email: '', 
+        password: '', 
+        role: 'operator' 
+    });
     const [inviteLoading, setInviteLoading] = useState(false);
     const [inviteError, setInviteError] = useState('');
 
-    // Cargar usuarios procesando los movimientos de inventario
-    const fetchUsersFromMovements = async () => {
+    // Cargar usuarios directamente desde el endpoint del backend
+    const fetchUsers = async () => {
         try {
-            const response = await api.get('/inventory/movements');
-            const movements = Array.isArray(response.data) ? response.data : (response.data?.data || []);
-
-            const uniqueUsersMap = new Map();
-
-            movements.forEach(movement => {
-                if (movement.user && movement.user.id) {
-                    uniqueUsersMap.set(movement.user.id, {
-                        id: movement.user.id,
-                        name: movement.user.name || 'Sin Nombre',
-                        email: movement.user.email || 'Sin Email',
-                        role: movement.user.role || 'operator',
-                        status: movement.user.status || 'Active',
-                        joinedDate: movement.created_at 
-                            ? new Date(movement.created_at).toLocaleDateString('en-US', { 
-                                month: 'short', 
-                                year: 'numeric' 
-                              })
-                            : 'Jan 2025'
-                    });
-                }
-            });
-
-            setUsers(Array.from(uniqueUsersMap.values()));
+            // Puedes cambiar a '/inventory/users' o '/users' según tu ruta registrada en Laravel
+            const response = await api.get('/inventory/users');
+            const dataList = Array.isArray(response.data) 
+                ? response.data 
+                : (response.data?.data || []);
+            setUsers(dataList);
             setError('');
         } catch (err) {
-            console.error('Error al procesar usuarios desde movimientos:', err);
+            console.error('Error al cargar la lista de usuarios:', err);
             setError('Error al obtener la lista de usuarios.');
         } finally {
             setLoading(false);
@@ -53,13 +40,13 @@ const Users = () => {
     };
 
     useEffect(() => {
-        fetchUsersFromMovements();
+        fetchUsers();
     }, []);
 
     // Métricas para la interfaz visual
     const totalUsers = users.length;
-    const adminCount = users.filter(u => u.role?.toLowerCase() === 'admin').length;
-    const activeCount = users.filter(u => u.status?.toLowerCase() === 'active' || u.status === undefined).length;
+    const adminCount = users.filter(u => u.role?.toLowerCase() === 'admin' || u.role?.toLowerCase() === 'staff').length;
+    const activeCount = users.filter(u => u.status?.toLowerCase() === 'active' || !u.status).length;
     const restrictedCount = totalUsers - activeCount;
 
     // Toggle de estado de acceso
@@ -96,7 +83,7 @@ const Users = () => {
         return name.slice(0, 2).toUpperCase() || 'US';
     };
 
-    // Registrar / Invitar usuario
+    // Registrar / Invitar usuario enviando su contraseña inicial
     const handleInviteSubmit = async (e) => {
         e.preventDefault();
         if (!isAdmin) return;
@@ -106,13 +93,13 @@ const Users = () => {
         try {
             await api.post('v1/auth/register', {
                 email: inviteData.email,
-                password: 'Password123!',
+                password: inviteData.password,
                 fullName: inviteData.name,
                 role: inviteData.role
             });
             setShowInviteModal(false);
-            setInviteData({ name: '', email: '', role: 'operator' });
-            fetchUsersFromMovements();
+            setInviteData({ name: '', email: '', password: '', role: 'operator' });
+            fetchUsers(); // Refrescar la tabla al instante con los datos reales
         } catch (err) {
             setInviteError(err.response?.data?.message || 'Error al enviar la invitación.');
         } finally {
@@ -137,7 +124,7 @@ const Users = () => {
                     <div className="flex items-center space-x-3">
                         <h1 className="text-2xl font-bold text-white tracking-tight">Gestión de usuarios</h1>
                         <span className="text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full">
-                            Solo el staff y los administradores pueden invitar y gestionar usuarios
+                            Solo el staff puede invitar y gestionar usuarios
                         </span>
                     </div>
                     <p className="text-xs text-gray-400 mt-1">Gestión del acceso, los roles y los permisos del equipo.</p>
@@ -145,9 +132,9 @@ const Users = () => {
                 {isAdmin && (
                     <button 
                         onClick={() => setShowInviteModal(true)}
-                        className="bg-[#FE2C55] hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition shadow-md shadow-blue-600/10 self-start sm:self-center"
+                        className="bg-[#FE2C55] hover:bg-[#e02447] text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition shadow-md shadow-[#FE2C55]/20 self-start sm:self-center cursor-pointer"
                     >
-                        + Invitar miembro del equipo
+                        + Crear cuenta para miembro del equipo
                     </button>
                 )}
             </div>
@@ -160,14 +147,14 @@ const Users = () => {
                 </div>
                 <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-4 flex flex-col justify-between h-24">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">ADMINS</span>
-                    <p className="text-2xl font-extrabold text-purple-400 tracking-tight">{adminCount}</p>
+                    <p className="text-2xl font-extrabold text-purple-400 tracking-tight">{adminCount - 1}</p>
                 </div>
                 <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-4 flex flex-col justify-between h-24">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">ACTIVE</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Activos</span>
                     <p className="text-2xl font-extrabold text-emerald-400 tracking-tight">{activeCount}</p>
                 </div>
                 <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-4 flex flex-col justify-between h-24">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">RESTRICTED</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Restringidos</span>
                     <p className="text-2xl font-extrabold text-red-400 tracking-tight">{restrictedCount}</p>
                 </div>
             </div>
@@ -223,13 +210,13 @@ const Users = () => {
                                                     <>
                                                         <button
                                                             onClick={() => handleToggleAccess(u)}
-                                                            className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs font-medium rounded-lg text-gray-300 transition"
+                                                            className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs font-medium rounded-lg text-gray-300 transition cursor-pointer"
                                                         >
                                                             {isRestricted ? 'Activate' : 'Restrict'}
                                                         </button>
                                                         <button
                                                             onClick={() => handleChangeRole(u)}
-                                                            className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs font-medium rounded-lg text-gray-300 transition"
+                                                            className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs font-medium rounded-lg text-gray-300 transition cursor-pointer"
                                                         >
                                                             Change Role
                                                         </button>
@@ -240,13 +227,13 @@ const Users = () => {
                                                             disabled
                                                             className="px-3 py-1 bg-gray-800/40 text-xs font-medium rounded-lg text-gray-600 cursor-not-allowed opacity-50"
                                                         >
-                                                            Solo Admin
+                                                            Solo Staff
                                                         </button>
                                                         <button
                                                             disabled
                                                             className="px-3 py-1 bg-gray-800/40 text-xs font-medium rounded-lg text-gray-600 cursor-not-allowed opacity-50"
                                                         >
-                                                            Solo Admin
+                                                            Solo Staff
                                                         </button>
                                                     </>
                                                 )}
@@ -266,7 +253,7 @@ const Users = () => {
                 </div>
             </div>
 
-            {/* Modal de Invitación */}
+            {/* Modal de Invitación / Creación de Cuenta */}
             {showInviteModal && isAdmin && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="bg-[#161B22] border border-gray-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -274,7 +261,7 @@ const Users = () => {
                             <h2 className="text-lg font-bold text-white">Invite Team Member</h2>
                             <button
                                 onClick={() => setShowInviteModal(false)}
-                                className="text-gray-400 hover:text-white transition font-bold"
+                                className="text-gray-400 hover:text-white transition font-bold cursor-pointer"
                             >
                                 ✕
                             </button>
@@ -296,7 +283,7 @@ const Users = () => {
                                     required
                                     value={inviteData.name}
                                     onChange={(e) => setInviteData({ ...inviteData, name: e.target.value })}
-                                    className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+                                    className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#FE2C55] transition"
                                     placeholder="John Doe"
                                 />
                             </div>
@@ -310,8 +297,22 @@ const Users = () => {
                                     required
                                     value={inviteData.email}
                                     onChange={(e) => setInviteData({ ...inviteData, email: e.target.value })}
-                                    className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+                                    className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#FE2C55] transition"
                                     placeholder="johndoe@example.com"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                                    Temporary Password
+                                </label>
+                                <input
+                                    type="password"
+                                    required
+                                    value={inviteData.password}
+                                    onChange={(e) => setInviteData({ ...inviteData, password: e.target.value })}
+                                    className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#FE2C55] transition"
+                                    placeholder="••••••••"
                                 />
                             </div>
 
@@ -322,7 +323,7 @@ const Users = () => {
                                 <select
                                     value={inviteData.role}
                                     onChange={(e) => setInviteData({ ...inviteData, role: e.target.value })}
-                                    className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition font-medium"
+                                    className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#FE2C55] transition font-medium cursor-pointer"
                                 >
                                     <option value="staff">Staff/Dueño</option>
                                     <option value="admin">Administrator</option>
@@ -334,16 +335,16 @@ const Users = () => {
                                 <button
                                     type="button"
                                     onClick={() => setShowInviteModal(false)}
-                                    className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-xl text-xs font-semibold transition"
+                                    className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={inviteLoading}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition disabled:opacity-50"
+                                    className="bg-[#FE2C55] hover:bg-[#e02447] text-white px-4 py-2 rounded-xl text-xs font-semibold transition disabled:opacity-50 cursor-pointer shadow-lg shadow-[#FE2C55]/20"
                                 >
-                                    {inviteLoading ? 'Sending...' : 'Send Invite'}
+                                    {inviteLoading ? 'Creating...' : 'Create Account'}
                                 </button>
                             </div>
                         </form>

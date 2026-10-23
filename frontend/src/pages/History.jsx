@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 
@@ -7,10 +7,12 @@ const Inventory = () => {
     const [movements, setMovements] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
 
-    // Estados para los selectores del modal
+    // Estados para los selectores y existencias del modal
     const [productsList, setProductsList] = useState([]);
     const [locationsList, setLocationsList] = useState([]);
+    const [stockSummary, setStockSummary] = useState([]);
 
     // Estado del modal de creación
     const [showModal, setShowModal] = useState(false);
@@ -35,28 +37,36 @@ const Inventory = () => {
         }
     };
 
-    // Cargar listas de productos y ubicaciones para el modal
+    // Cargar listas de productos, ubicaciones y existencias de stock actuales
     const fetchOptions = async () => {
         try {
-            const [prodRes, locRes] = await Promise.all([
-                api.get('/products'),
-                api.get('/locations')
+            const [prodRes, locRes, stockRes] = await Promise.all([
+                api.get('/inventory/products'),
+                api.get('/inventory/locations'),
+                api.get('/inventory/stock')
             ]);
 
             const prods = Array.isArray(prodRes.data) ? prodRes.data : (prodRes.data?.data || []);
             const locs = Array.isArray(locRes.data) ? locRes.data : (locRes.data?.data || []);
+            const stocks = Array.isArray(stockRes.data) ? stockRes.data : (stockRes.data?.data || []);
 
             setProductsList(prods);
             setLocationsList(locs);
+            setStockSummary(stocks);
 
             // Asignar primer elemento por defecto si existen
-            setFormData(prev => ({
-                ...prev,
-                product_id: prods.length > 0 ? prods[0].id : '',
-                location_id: locs.length > 0 ? locs[0].id : ''
-            }));
+            if (prods.length > 0) {
+                const firstProdId = prods[0].id;
+                const matchedStock = stocks.find(s => Number(s.product_id) === Number(firstProdId));
+                
+                setFormData(prev => ({
+                    ...prev,
+                    product_id: firstProdId,
+                    location_id: matchedStock?.location_id || (locs.length > 0 ? locs[0].id : '')
+                }));
+            }
         } catch (err) {
-            console.error('Error al cargar productos o ubicaciones:', err);
+            console.error('Error al cargar datos auxiliares:', err);
         }
     };
 
@@ -64,6 +74,38 @@ const Inventory = () => {
         fetchMovements();
         fetchOptions();
     }, []);
+
+    // Calcular stock actual y ubicación automática del producto seleccionado
+    const selectedProductStockInfo = useMemo(() => {
+        if (!formData.product_id) return { currentStock: 0, locationId: '' };
+        const found = stockSummary.find(s => Number(s.product_id) === Number(formData.product_id));
+        return {
+            currentStock: Number(found?.current_stock || 0),
+            locationId: found?.location_id || ''
+        };
+    }, [formData.product_id, stockSummary]);
+
+    // Manejar cambio de producto para autoseleccionar su ubicación asociada en segundo plano
+    const handleProductChange = (productId) => {
+        const found = stockSummary.find(s => Number(s.product_id) === Number(productId));
+        setFormData(prev => ({
+            ...prev,
+            product_id: productId,
+            location_id: found?.location_id || prev.location_id
+        }));
+    };
+
+    // Filtrar movimientos en tiempo real con el buscador
+    const filteredMovements = useMemo(() => {
+        return movements.filter(item => {
+            const productName = item.product?.name?.toLowerCase() || '';
+            const productSku = item.product?.sku?.toLowerCase() || '';
+            const warehouse = item.location?.warehouse_code?.toLowerCase() || '';
+            const query = searchTerm.toLowerCase().trim();
+
+            return productName.includes(query) || productSku.includes(query) || warehouse.includes(query);
+        });
+    }, [movements, searchTerm]);
 
     // Manejar envío del formulario
     const handleSubmit = async (e) => {
@@ -80,13 +122,18 @@ const Inventory = () => {
             });
 
             setShowModal(false);
-            setFormData({
-                product_id: productsList[0]?.id || '',
-                location_id: locationsList[0]?.id || '',
-                type: 'INBOUND',
-                quantity: 1
-            });
-            fetchMovements(); // Recargar la tabla
+            if (productsList.length > 0) {
+                const firstProdId = productsList[0].id;
+                const matchedStock = stockSummary.find(s => Number(s.product_id) === Number(firstProdId));
+                setFormData({
+                    product_id: firstProdId,
+                    location_id: matchedStock?.location_id || (locationsList[0]?.id || ''),
+                    type: 'INBOUND',
+                    quantity: 1
+                });
+            }
+            fetchMovements();
+            fetchOptions(); // Actualizar stock general
         } catch (err) {
             const msg = err.response?.data?.message || 'Error al registrar el movimiento.';
             setFormError(msg);
@@ -120,18 +167,35 @@ const Inventory = () => {
                     </p>
                 </div>
 
-                {/* Botón visible solo para Administradores */}
-                {(user?.role === 'staff' || user?.role === 'admin') && (
-                    <button
-                        onClick={() => setShowModal(true)}
-                        className="flex items-center space-x-2 bg-[#FE2C55] hover:bg-[#e02447] text-white px-4 py-2.5 rounded-xl text-sm font-medium transition shadow-lg shadow-[#FE2C55]/20"
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                        </svg>
-                        <span>Registrar Movimiento</span>
-                    </button>
-                )}
+                {/* Buscador y Botón de Registro */}
+                <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:flex-none">
+                        <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </span>
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Buscar por producto, SKU, almacén..."
+                            className="w-full sm:w-64 pl-9 pr-4 py-2.5 bg-[#161B22] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#FE2C55] transition"
+                        />
+                    </div>
+
+                    {(user?.role === 'staff' || user?.role === 'admin') && (
+                        <button
+                            onClick={() => setShowModal(true)}
+                            className="flex items-center space-x-2 bg-[#FE2C55] hover:bg-[#e02447] text-white px-4 py-2.5 rounded-xl text-sm font-medium transition shadow-lg shadow-[#FE2C55]/20 cursor-pointer"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                            <span>Registrar Movimiento</span>
+                        </button>
+                    )}
+                </div>
             </div>
 
             {error && (
@@ -159,14 +223,14 @@ const Inventory = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-800/60 text-sm">
-                            {movements.length === 0 ? (
+                            {filteredMovements.length === 0 ? (
                                 <tr>
                                     <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
-                                        No hay movimientos registrados en el historial.
+                                        No se encontraron movimientos registrados.
                                     </td>
                                 </tr>
                             ) : (
-                                movements.map((item) => (
+                                filteredMovements.map((item) => (
                                     <tr key={item.id} className="hover:bg-gray-800/30 transition-colors">
                                         <td className="px-6 py-4 font-mono text-xs text-gray-400">
                                             #{item.id}
@@ -187,16 +251,17 @@ const Inventory = () => {
                                         </td>
                                         <td className="px-6 py-4 text-xs text-gray-300">
                                             {item.location?.warehouse_code ? (
-                                                <span>{item.location.warehouse_code} - Pasillo {item.location.aisle}</span>
+                                                <span>{item.location.warehouse_code} (Pasillo {item.location.aisle})</span>
                                             ) : (
                                                 <span className="font-mono text-gray-500">Ubicación #{item.location_id}</span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${item.type === 'INBOUND'
-                                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                                : 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
-                                                }`}>
+                                            <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                                                item.type === 'INBOUND'
+                                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                                    : 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
+                                            }`}>
                                                 <span className={`w-1.5 h-1.5 rounded-full ${item.type === 'INBOUND' ? 'bg-emerald-400' : 'bg-[#FE2C55]'}`}></span>
                                                 <span>{item.type === 'INBOUND' ? 'ENTRADA' : 'SALIDA'}</span>
                                             </span>
@@ -206,8 +271,6 @@ const Inventory = () => {
                                         </td>
                                         <td className="px-6 py-4 text-xs text-gray-400">
                                             {item.user?.name || item.user?.username || '-'}
-                                            <span className='text-[30px] text-red-500'>{" . "}</span>
-                                            {item.user?.email || '-'}
                                         </td>
                                         <td className="px-6 py-4 text-xs text-gray-400">
                                             {new Date(item.created_at).toLocaleString()}
@@ -228,7 +291,7 @@ const Inventory = () => {
                             <h2 className="text-lg font-bold text-white">Nuevo Movimiento de Stock</h2>
                             <button
                                 onClick={() => setShowModal(false)}
-                                className="text-gray-400 hover:text-white transition"
+                                className="text-gray-400 hover:text-white transition cursor-pointer"
                             >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -254,8 +317,8 @@ const Inventory = () => {
                                 <select
                                     required
                                     value={formData.product_id}
-                                    onChange={(e) => setFormData({ ...formData, product_id: e.target.value })}
-                                    className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:border-[#FE2C55] transition"
+                                    onChange={(e) => handleProductChange(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:border-[#FE2C55] transition cursor-pointer"
                                 >
                                     <option value="" disabled>Seleccione un producto...</option>
                                     {productsList.map((prod) => (
@@ -266,25 +329,16 @@ const Inventory = () => {
                                 </select>
                             </div>
 
-                            {/* Desplegable de Ubicación */}
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
-                                    Ubicación
-                                </label>
-                                <select
-                                    required
-                                    value={formData.location_id}
-                                    onChange={(e) => setFormData({ ...formData, location_id: e.target.value })}
-                                    className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:border-[#FE2C55] transition"
-                                >
-                                    <option value="" disabled>Seleccione una ubicación...</option>
-                                    {locationsList.map((loc) => (
-                                        <option key={loc.id} value={loc.id}>
-                                            {loc.warehouse_code ? `${loc.warehouse_code} - Pasillo ${loc.aisle}` : loc.name || `Ubicación #${loc.id}`}
-                                        </option>
-                                    ))}
-                                </select>
+                            {/* Indicador de Stock Actual en Almacén */}
+                            <div className="bg-gray-900/60 border border-gray-800 px-3.5 py-2 rounded-xl flex items-center justify-between text-xs">
+                                <span className="text-gray-400 font-medium">Stock disponible actual:</span>
+                                <span className="text-[#0DFC00] font-bold font-mono text-sm">
+                                    {selectedProductStockInfo.currentStock} unidades
+                                </span>
                             </div>
+
+                            {/* Ubicación asignada automáticamente en segundo plano (Oculta al usuario) */}
+                            <input type="hidden" value={formData.location_id} />
 
                             {/* Tipo de Movimiento */}
                             <div>
@@ -294,7 +348,7 @@ const Inventory = () => {
                                 <select
                                     value={formData.type}
                                     onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                                    className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:border-[#FE2C55] transition"
+                                    className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:border-[#FE2C55] transition cursor-pointer"
                                 >
                                     <option value="INBOUND">Entrada (INBOUND)</option>
                                     <option value="OUTBOUND">Salida (OUTBOUND)</option>
@@ -321,14 +375,14 @@ const Inventory = () => {
                                 <button
                                     type="button"
                                     onClick={() => setShowModal(false)}
-                                    className="px-4 py-2 border border-gray-800 text-gray-300 rounded-xl text-xs font-semibold hover:bg-gray-800/50 transition"
+                                    className="px-4 py-2 border border-gray-800 text-gray-300 rounded-xl text-xs font-semibold hover:bg-gray-800/50 transition cursor-pointer"
                                 >
                                     Cancelar
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={submitLoading}
-                                    className="px-4 py-2 bg-[#FE2C55] text-white rounded-xl text-xs font-semibold hover:bg-[#e02447] disabled:opacity-50 transition shadow-lg shadow-[#FE2C55]/20 flex items-center space-x-2"
+                                    className="px-4 py-2 bg-[#FE2C55] text-white rounded-xl text-xs font-semibold hover:bg-[#e02447] disabled:opacity-50 transition shadow-lg shadow-[#FE2C55]/20 flex items-center space-x-2 cursor-pointer"
                                 >
                                     {submitLoading ? (
                                         <>

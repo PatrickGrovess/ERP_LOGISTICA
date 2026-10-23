@@ -6,28 +6,109 @@ const InventoryStock = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState('ALL');
+
+    // Estado para controlar el Modal de Add Item
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [formError, setFormError] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+
+    // Campos del formulario unificado
+    const [formData, setFormData] = useState({
+        // Producto
+        sku: '',
+        name: '',
+        unit_of_measure: 'kg',
+        unit_price: '',
+        // Ubicación
+        warehouse_code: '',
+        aisle: '',
+        shelf: '',
+        level: '',
+        // Movimiento de Stock
+        type: 'INBOUND',
+        quantity: '',
+        reference_type: 'MANUAL_ADJUSTMENT'
+    });
+
+    const fetchStock = async () => {
+        try {
+            const response = await api.get('/inventory/stock');
+            const rawData = Array.isArray(response.data)
+                ? response.data
+                : (response.data?.data || []);
+            setStockData(rawData);
+        } catch (err) {
+            console.error('Error fetching stock data:', err);
+            setError('No se pudo cargar la información del inventario.');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const fetchStock = async () => {
-            try {
-                const response = await api.get('/inventory/stock');
-                const rawData = Array.isArray(response.data) 
-                    ? response.data 
-                    : (response.data?.data || []);
-                setStockData(rawData);
-            } catch (err) {
-                console.error('Error fetching stock data:', err);
-                setError('No se pudo cargar la información del inventario.');
-            } finally {
-                setLoading(false);
-            }
-        };
-
         fetchStock();
     }, []);
 
-    // Filtrado en tiempo real por búsqueda y categoría
+    // Manejar envío del formulario para crear Producto, Ubicación y Movimiento
+    const handleAddItem = async (e) => {
+        e.preventDefault();
+        setFormError('');
+        setSubmitting(true);
+
+        try {
+            // 1. Crear el Producto (Asegurando unit_price como número decimal)
+            const productRes = await api.post('/inventory/products', {
+                sku: formData.sku,
+                name: formData.name,
+                unit_of_measure: formData.unit_of_measure,
+                unit_price: Number(formData.unit_price) || 0.00
+            });
+            const productId = productRes.data.data?.id || productRes.data.id;
+
+            // 2. Crear la Ubicación
+            const locationRes = await api.post('/inventory/locations', {
+                warehouse_code: formData.warehouse_code,
+                aisle: formData.aisle,
+                shelf: formData.shelf,
+                level: formData.level
+            });
+            const locationId = locationRes.data.data?.id || locationRes.data.id;
+
+            // 3. Registrar el Movimiento de Stock
+            await api.post('/inventory/movements', {
+                product_id: productId,
+                location_id: locationId,
+                type: formData.type,
+                quantity: Number(formData.quantity),
+                reference_type: formData.reference_type
+            });
+
+            // Cerrar modal, limpiar y recargar datos
+            setIsModalOpen(false);
+            setFormData({
+                sku: '',
+                name: '',
+                unit_of_measure: 'kg',
+                unit_price: '',
+                warehouse_code: '',
+                aisle: '',
+                shelf: '',
+                level: '',
+                type: 'INBOUND',
+                quantity: '',
+                reference_type: 'MANUAL_ADJUSTMENT'
+            });
+            fetchStock();
+        } catch (err) {
+            console.error('Error al registrar el item:', err);
+            const msg = err.response?.data?.message || 'Error al procesar el registro completo.';
+            setFormError(msg);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    // Filtrado en tiempo real por búsqueda
     const filteredStock = useMemo(() => {
         return stockData.filter((item) => {
             const productName = item.product?.name?.toLowerCase() || '';
@@ -35,9 +116,7 @@ const InventoryStock = () => {
             const warehouse = item.location?.warehouse_code?.toLowerCase() || '';
             const query = searchTerm.toLowerCase().trim();
 
-            const matchesSearch = productName.includes(query) || productSku.includes(query) || warehouse.includes(query);
-            
-            return matchesSearch;
+            return productName.includes(query) || productSku.includes(query) || warehouse.includes(query);
         });
     }, [stockData, searchTerm]);
 
@@ -65,13 +144,13 @@ const InventoryStock = () => {
             {/* Header del Inventario con Acciones y Búsqueda */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-white tracking-tight">Inventory</h1>
+                    <h1 className="text-2xl font-bold text-white tracking-tight">Inventario</h1>
                     <p className="text-xs text-gray-400 mt-1">
                         {filteredStock.length} de {stockData.length} items · Existencias registradas
                     </p>
                 </div>
 
-                {/* Filtros, Buscador y Botón Añadir */}
+                {/* Buscador y Botón Añadir */}
                 <div className="flex flex-wrap items-center gap-3">
                     <div className="relative flex-1 sm:flex-none">
                         <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500">
@@ -88,17 +167,12 @@ const InventoryStock = () => {
                         />
                     </div>
 
-                    <select 
-                        value={selectedCategory}
-                        onChange={(e) => setSelectedCategory(e.target.value)}
-                        className="bg-[#161B22] border border-gray-800 text-xs text-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:border-[#FE2C55] cursor-pointer"
+                    <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="bg-[#FE2C55] hover:bg-[#e02649] text-white font-medium text-xs py-2 px-4 rounded-xl transition duration-200 flex items-center space-x-1.5 shadow-lg shadow-[#FE2C55]/20 cursor-pointer"
                     >
-                        <option value="ALL">All Categories</option>
-                    </select>
-
-                    <button className="bg-[#FE2C55] hover:bg-[#e02649] text-white font-medium text-xs py-2 px-4 rounded-xl transition duration-200 flex items-center space-x-1.5 shadow-lg shadow-[#FE2C55]/20 cursor-pointer">
                         <span className="text-sm font-bold">+</span>
-                        <span>Add Item</span>
+                        <span>Añadir producto</span>
                     </button>
                 </div>
             </div>
@@ -109,9 +183,6 @@ const InventoryStock = () => {
                     <table className="w-full text-left border-collapse text-xs">
                         <thead>
                             <tr className="border-b border-gray-800/80 text-gray-400 uppercase tracking-wider font-semibold bg-[#0C1017]/40">
-                                <th className="p-4 w-10 text-center">
-                                    <input type="checkbox" className="rounded bg-gray-800 border-gray-700 text-[#FE2C55] focus:ring-0 cursor-pointer" />
-                                </th>
                                 <th className="px-4 py-3.5">ITEM</th>
                                 <th className="px-4 py-3.5">SKU / ID</th>
                                 <th className="px-4 py-3.5">UBICACIÓN</th>
@@ -131,30 +202,23 @@ const InventoryStock = () => {
                             ) : (
                                 filteredStock.map((item, index) => {
                                     const currentStock = Number(item.current_stock || 0);
-                                    const isLowStock = currentStock < 10;
+                                    const isLowStock = currentStock <= 10;
                                     const productName = item.product?.name || 'Producto sin nombre';
                                     const sku = item.product?.sku || `ID-${item.product_id}`;
                                     const unit = item.product?.unit_of_measure || 'units';
 
-                                    // Toma el precio del backend si existe, de lo contrario coloca $20.00 de respaldo
-                                    const rawPrice = item.product?.price ?? item.price ?? 20;
+                                    const rawPrice = item.product?.unit_price ?? item.unit_price ?? 0;
                                     const priceFormatted = new Intl.NumberFormat('en-US', {
                                         style: 'currency',
                                         currency: 'USD'
                                     }).format(rawPrice);
 
-                                    const locationStr = item.location 
+                                    const locationStr = item.location
                                         ? `${item.location.warehouse_code} (${item.location.aisle}-${item.location.shelf}-${item.location.level})`
                                         : 'Sin Ubicación';
 
                                     return (
                                         <tr key={item.product_id || index} className="hover:bg-gray-800/30 transition-colors">
-                                            {/* Checkbox */}
-                                            <td className="p-4 text-center">
-                                                <input type="checkbox" className="rounded bg-gray-800 border-gray-700 text-[#FE2C55] focus:ring-0 cursor-pointer" />
-                                            </td>
-
-                                            {/* Nombre del Producto */}
                                             <td className="px-4 py-3.5">
                                                 <div className="flex items-center space-x-3">
                                                     <div className="w-8 h-8 rounded-lg bg-[#FE2C55]/10 border border-[#FE2C55]/20 text-[#FE2C55] flex items-center justify-center shrink-0">
@@ -172,58 +236,40 @@ const InventoryStock = () => {
                                                     </div>
                                                 </div>
                                             </td>
-
-                                            {/* SKU */}
                                             <td className="px-4 py-3.5">
                                                 <span className="bg-gray-800/80 text-gray-300 font-mono text-[11px] px-2 py-0.5 rounded border border-gray-700/60">
                                                     {sku}
                                                 </span>
                                             </td>
-
-                                            {/* Ubicación */}
                                             <td className="px-4 py-3.5 text-gray-400 font-mono text-[11px]">
                                                 {locationStr}
                                             </td>
-
-                                            {/* Medida */}
                                             <td className="px-4 py-3.5 text-gray-400 capitalize">
                                                 {unit}
                                             </td>
-
-                                            {/* Columna Nueva: Precio */}
                                             <td className="px-4 py-3.5 font-semibold text-white font-mono">
                                                 {priceFormatted}
                                             </td>
-
-                                            {/* Stock */}
                                             <td className="px-4 py-3.5">
                                                 <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium ${
                                                     isLowStock
                                                         ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                                                        : 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
+                                                        : 'bg-[#05FF00]/10 text-[#05FF00] border border-[#05FF00]/20'
                                                 }`}>
-                                                    <span className={`w-1.5 h-1.5 rounded-full ${isLowStock ? 'bg-amber-400' : 'bg-[#FE2C55]'}`}></span>
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${isLowStock ? 'bg-amber-400' : 'bg-[#05FF00]'}`}></span>
                                                     <span>
-                                                        {isLowStock ? `Low Stock · ${currentStock}` : `In Stock · ${currentStock}`}
+                                                        {isLowStock ? `Stock bajo · ${currentStock}` : `Stock (Alto) · ${currentStock}`}
                                                     </span>
                                                 </span>
                                             </td>
-
-                                            {/* Acciones */}
                                             <td className="px-4 py-3.5 text-right">
                                                 <div className="flex items-center justify-end space-x-2">
-                                                    <button 
-                                                        title="Editar Producto"
-                                                        className="p-1.5 text-gray-400 hover:text-white bg-gray-800/60 hover:bg-gray-700 rounded-lg border border-gray-700/50 transition cursor-pointer"
-                                                    >
+                                                    <button title="Editar Producto" className="p-1.5 text-gray-400 hover:text-white bg-gray-800/60 hover:bg-gray-700 rounded-lg border border-gray-700/50 transition cursor-pointer">
                                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                                         </svg>
                                                     </button>
-                                                    <button 
-                                                        title="Eliminar Producto"
-                                                        className="p-1.5 text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-lg border border-red-500/20 transition cursor-pointer"
-                                                    >
+                                                    <button title="Eliminar Producto" className="p-1.5 text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-lg border border-red-500/20 transition cursor-pointer">
                                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                                         </svg>
@@ -238,6 +284,187 @@ const InventoryStock = () => {
                     </table>
                 </div>
             </div>
+
+            {/* MODAL ADD ITEM (Producto + Ubicación + Stock) */}
+            {isModalOpen && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-[#161B22] border border-gray-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-5 my-8">
+                        <div className="flex justify-between items-center border-b border-gray-800 pb-4">
+                            <h2 className="text-lg font-bold text-white uppercase tracking-wide">Añadir Nuevo Item al Inventario</h2>
+                            <button
+                                onClick={() => setIsModalOpen(false)}
+                                className="text-gray-400 hover:text-white p-1 rounded-lg cursor-pointer"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {formError && (
+                            <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-xl text-xs text-center">
+                                {formError}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleAddItem} className="space-y-4">
+                            {/* Sección Producto */}
+                            <div>
+                                <p className="text-[11px] font-semibold text-[#FE2C55] uppercase tracking-wider mb-2">1. Datos del Producto</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">SKU</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="Ej. QUESO-01"
+                                            value={formData.sku}
+                                            onChange={(e) => setFormData({ ...formData, sku: e.target.value.toUpperCase() })}
+                                            className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55]"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">Nombre</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="Ej. Queso Cheddar"
+                                            value={formData.name}
+                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                            className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55]"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 mt-3">
+                                    <div>
+                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">Unidad de Medida</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="Ej. kg, unidades, litros"
+                                            value={formData.unit_of_measure}
+                                            onChange={(e) => setFormData({ ...formData, unit_of_measure: e.target.value })}
+                                            className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55]"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block font-bold text-[10px] text-[#0DFC00] mb-1 uppercase">Precio <span className="text-[9px] text-gray-400">(Entero o Decimal)</span></label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="Ej. 35.75"
+                                            value={formData.unit_price}
+                                            onChange={(e) => setFormData({ ...formData, unit_price: e.target.value })}
+                                            className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55]"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Sección Ubicación */}
+                            <div className="pt-2 border-t border-gray-800">
+                                <p className="text-[11px] font-semibold text-[#FE2C55] uppercase tracking-wider mb-2">2. Ubicación Física (Almacén)</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">Almacén</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="Ej. Avenida central"
+                                            value={formData.warehouse_code}
+                                            onChange={(e) => setFormData({ ...formData, warehouse_code: e.target.value.toUpperCase() })}
+                                            className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55]"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">Pasillo (Aisle)</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="Ej. 01"
+                                            value={formData.aisle}
+                                            onChange={(e) => setFormData({ ...formData, aisle: e.target.value })}
+                                            className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55]"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 mt-3">
+                                    <div>
+                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">Estante (Shelf)</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="Ej. B | Ej. 1"
+                                            value={formData.shelf}
+                                            onChange={(e) => setFormData({ ...formData, shelf: e.target.value.toUpperCase() })}
+                                            className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55]"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">Nivel (Level)</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="Ej. 03"
+                                            value={formData.level}
+                                            onChange={(e) => setFormData({ ...formData, level: e.target.value })}
+                                            className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55]"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Sección Movimiento de Stock */}
+                            <div className="pt-2 border-t border-gray-800">
+                                <p className="text-[11px] font-semibold text-[#FE2C55] uppercase tracking-wider mb-2">3. Cantidad Inicial (Stock)</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">Tipo</label>
+                                        <select
+                                            value={formData.type}
+                                            onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                                            className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white focus:outline-none focus:border-[#FE2C55] cursor-pointer"
+                                        >
+                                            <option value="INBOUND">Entrada (INBOUND)</option>
+                                            <option value="OUTBOUND">Salida (OUTBOUND)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">Cantidad</label>
+                                        <input
+                                            type="number"
+                                            required
+                                            min="1"
+                                            placeholder="Ej. 50"
+                                            value={formData.quantity}
+                                            onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                                            className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55]"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 flex space-x-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsModalOpen(false)}
+                                    className="w-1/2 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-bold uppercase transition cursor-pointer"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={submitting}
+                                    className="w-1/2 py-2.5 bg-[#FE2C55] hover:bg-[#e02447] text-white rounded-xl text-xs font-bold uppercase tracking-wider disabled:opacity-50 transition shadow-lg shadow-[#FE2C55]/20 cursor-pointer"
+                                >
+                                    {submitting ? 'Guardando...' : 'Crear Registro'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

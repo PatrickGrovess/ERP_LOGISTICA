@@ -39,7 +39,7 @@ const Login = () => {
     return (
         <div className="min-h-screen flex items-center justify-center bg-[#0C1017] p-4 font-sans text-gray-200">
             <div className="max-w-md w-full bg-[#161B22] border border-gray-800/80 rounded-2xl shadow-2xl p-8 space-y-6">
-                
+
                 {/* Header / Logo */}
                 <div className="text-center space-y-3">
                     <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#FE2C55]/10 border border-[#FE2C55]/20 text-[#FE2C55] mb-2">
@@ -74,24 +74,32 @@ const Login = () => {
                             <button
                                 type="button"
                                 onClick={() => setRole('staff')}
-                                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${
-                                    role === 'staff'
-                                        ? 'bg-[#FE2C55] text-white shadow-lg shadow-[#FE2C55]/20'
-                                        : 'text-gray-400 hover:text-white'
-                                }`}
+                                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${role === 'staff'
+                                    ? 'bg-[#FE2C55] text-white shadow-lg shadow-[#FE2C55]/20'
+                                    : 'text-gray-400 hover:text-white'
+                                    }`}
                             >
                                 Staff User (Dueño)
                             </button>
                             <button
                                 type="button"
-                                onClick={() => setRole('operator')}
-                                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${
-                                    role === 'operator'
-                                        ? 'bg-[#FE2C55] text-white shadow-lg shadow-[#FE2C55]/20'
-                                        : 'text-gray-400 hover:text-white'
-                                }`}
+                                onClick={() => setRole('admin')}
+                                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${role === 'admin'
+                                    ? 'bg-[#FE2C55] text-white shadow-lg shadow-[#FE2C55]/20'
+                                    : 'text-gray-400 hover:text-white'
+                                    }`}
                             >
-                                Admin / Operador
+                                Admin
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setRole('operator')}
+                                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${role === 'operator'
+                                    ? 'bg-[#FE2C55] text-white shadow-lg shadow-[#FE2C55]/20'
+                                    : 'text-gray-400 hover:text-white'
+                                    }`}
+                            >
+                                Operador
                             </button>
                         </div>
                     </div>
@@ -107,7 +115,7 @@ const Login = () => {
                             onChange={(e) => setServerCode(e.target.value)}
                             required
                             className="w-full px-4 py-3 bg-[#0C1017] border border-gray-800 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-[#FE2C55] focus:ring-1 focus:ring-[#FE2C55] transition-all duration-200 uppercase"
-                            placeholder="Ej. BARRIO-01"
+                            placeholder="Ej. JDU73-IEH83-OH382"
                         />
                     </div>
 
@@ -163,7 +171,7 @@ const Login = () => {
 
                 <div className="text-center space-y-3">
                     <p className="text-sm text-gray-400">
-                         <a href="/register" className="text-[#FE2C55] hover:underline font-medium"><span className="text-gray-400">¿No tienes una cuenta? </span> Regístrate</a>
+                        <a href="/register" className="text-[#FE2C55] hover:underline font-medium"><span className="text-gray-400">¿No tienes una cuenta? </span> Regístrate</a>
                     </p>
                 </div>
             </div>

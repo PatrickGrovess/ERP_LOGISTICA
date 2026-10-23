@@ -19,6 +19,20 @@ const Register = () => {
     const { register } = useAuth();
     const navigate = useNavigate();
 
+    // Función para generar un código aleatorio único con formato XXXXX-XXXXX-XXXXX
+    const generateServerCode = () => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        const generateSegment = () => {
+            let segment = '';
+            for (let i = 0; i < 5; i++) {
+                segment += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return segment;
+        };
+        const randomCode = `${generateSegment()}-${generateSegment()}-${generateSegment()}`;
+        setServerCode(randomCode);
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
@@ -64,7 +78,7 @@ const Register = () => {
 
                 {/* Header del Formulario */}
                 <div className="text-center">
-                    <h1 className="text-2xl font-bold text-[#FE2C55] uppercase tracking-wide">Crear registro para tu negocio</h1>
+                    <h1 className="text-[20px] font-bold text-[#FE2C55] uppercase tracking-wide">Crear registro para tu negocio</h1>
                     <p className="text-xs text-gray-400 mt-1.5">
                         Registra tu organización y define tu código de servidor
                     </p>
@@ -86,7 +100,7 @@ const Register = () => {
                         </label>
                         <input
                             type="text"
-                            placeholder="Ej. Groyte S.A."
+                            placeholder="Ej. Mi Empresa S.A."
                             className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55] transition"
                             value={companyName}
                             onChange={(e) => setCompanyName(e.target.value)}
@@ -96,9 +110,18 @@ const Register = () => {
 
                     {/* Código de Servidor Personalizado (Server Code) */}
                     <div>
-                        <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
-                            Código de Servidor (Server Code)
-                        </label>
+                        <div className="flex justify-between items-center mb-1.5">
+                            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                                Código de Servidor (Server Code)
+                            </label>
+                            <button
+                                type="button"
+                                onClick={generateServerCode}
+                                className="text-[11px] text-[#FE2C55] hover:underline font-medium cursor-pointer"
+                            >
+                                Generar Automático
+                            </button>
+                        </div>
                         <input
                             type="text"
                             placeholder="Ej. JDU73-IEH83-OH382"
@@ -175,7 +198,7 @@ const Register = () => {
                         <button
                             disabled={loading}
                             type="submit"
-                            className="w-full py-3 bg-[#FE2C55] hover:bg-[#e02447] text-white rounded-xl text-xs font-bold uppercase tracking-wider disabled:opacity-50 transition shadow-lg shadow-[#FE2C55]/20"
+                            className="w-full py-3 bg-[#FE2C55] hover:bg-[#e02447] text-white rounded-xl text-xs font-bold uppercase tracking-wider disabled:opacity-50 transition shadow-lg shadow-[#FE2C55]/20 cursor-pointer"
                         >
                             <span>{loading ? 'Registrando empresa...' : 'Registrar Empresa y Cuenta'}</span>
                         </button>
