@@ -1,11 +1,16 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../api/axios';
+import { useAuth } from '../context/AuthContext';
 
 const InventoryStock = () => {
+    const location = useLocation();
+    const { user, tenant } = useAuth();
+    const lowStockThreshold = Number(tenant?.low_stock_threshold ?? 10);
     const [stockData, setStockData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [searchTerm, setSearchTerm] = useState('');
+    const [searchTerm, setSearchTerm] = useState(location.state?.searchQuery || '');
 
     // Estado para controlar el Modal de Add Item
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -24,8 +29,6 @@ const InventoryStock = () => {
         aisle: '',
         shelf: '',
         level: '',
-        // Movimiento de Stock
-        type: 'INBOUND',
         quantity: '',
         reference_type: 'MANUAL_ADJUSTMENT'
     });
@@ -49,38 +52,28 @@ const InventoryStock = () => {
         fetchStock();
     }, []);
 
-    // Manejar envío del formulario para crear Producto, Ubicación y Movimiento
+    useEffect(() => {
+        setSearchTerm(location.state?.searchQuery || '');
+    }, [location.key]);
+
+    // Crear el producto, reutilizar o crear la ubicación y registrar la entrada inicial en una transacción.
     const handleAddItem = async (e) => {
         e.preventDefault();
         setFormError('');
         setSubmitting(true);
 
         try {
-            // 1. Crear el Producto (Asegurando unit_price como número decimal)
-            const productRes = await api.post('/inventory/products', {
+            await api.post('/inventory/items', {
                 sku: formData.sku,
                 name: formData.name,
                 unit_of_measure: formData.unit_of_measure,
-                unit_price: Number(formData.unit_price) || 0.00
-            });
-            const productId = productRes.data.data?.id || productRes.data.id;
-
-            // 2. Crear la Ubicación
-            const locationRes = await api.post('/inventory/locations', {
+                unit_price: Number(formData.unit_price) || 0,
                 warehouse_code: formData.warehouse_code,
                 aisle: formData.aisle,
                 shelf: formData.shelf,
-                level: formData.level
-            });
-            const locationId = locationRes.data.data?.id || locationRes.data.id;
-
-            // 3. Registrar el Movimiento de Stock
-            await api.post('/inventory/movements', {
-                product_id: productId,
-                location_id: locationId,
-                type: formData.type,
+                level: formData.level,
                 quantity: Number(formData.quantity),
-                reference_type: formData.reference_type
+                reference_type: formData.reference_type,
             });
 
             // Cerrar modal, limpiar y recargar datos
@@ -94,14 +87,14 @@ const InventoryStock = () => {
                 aisle: '',
                 shelf: '',
                 level: '',
-                type: 'INBOUND',
                 quantity: '',
                 reference_type: 'MANUAL_ADJUSTMENT'
             });
-            fetchStock();
+            await fetchStock();
         } catch (err) {
             console.error('Error al registrar el item:', err);
-            const msg = err.response?.data?.message || 'Error al procesar el registro completo.';
+            const validationErrors = Object.values(err.response?.data?.errors || {}).flat();
+            const msg = validationErrors[0] || err.response?.data?.message || 'Error al procesar el registro completo.';
             setFormError(msg);
         } finally {
             setSubmitting(false);
@@ -167,13 +160,15 @@ const InventoryStock = () => {
                         />
                     </div>
 
-                    <button
-                        onClick={() => setIsModalOpen(true)}
-                        className="bg-[#FE2C55] hover:bg-[#e02649] text-white font-medium text-xs py-2 px-4 rounded-xl transition duration-200 flex items-center space-x-1.5 shadow-lg shadow-[#FE2C55]/20 cursor-pointer"
-                    >
-                        <span className="text-sm font-bold">+</span>
-                        <span>Añadir producto</span>
-                    </button>
+                    {['staff', 'admin'].includes(user?.role) && (
+                        <button
+                            onClick={() => setIsModalOpen(true)}
+                            className="bg-[#FE2C55] hover:bg-[#e02649] text-white font-medium text-xs py-2 px-4 rounded-xl transition duration-200 flex items-center space-x-1.5 shadow-lg shadow-[#FE2C55]/20 cursor-pointer"
+                        >
+                            <span className="text-sm font-bold">+</span>
+                            <span>Añadir producto</span>
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -189,36 +184,35 @@ const InventoryStock = () => {
                                 <th className="px-4 py-3.5">MEDIDA</th>
                                 <th className="px-4 py-3.5">PRECIO</th>
                                 <th className="px-4 py-3.5">STOCK</th>
-                                <th className="px-4 py-3.5 text-right">ACTIONS</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-800/50 text-gray-300">
                             {filteredStock.length === 0 ? (
                                 <tr>
-                                    <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
+                                    <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
                                         No se encontraron productos en el inventario.
                                     </td>
                                 </tr>
                             ) : (
                                 filteredStock.map((item, index) => {
                                     const currentStock = Number(item.current_stock || 0);
-                                    const isLowStock = currentStock <= 10;
+                                    const isLowStock = currentStock <= lowStockThreshold;
                                     const productName = item.product?.name || 'Producto sin nombre';
                                     const sku = item.product?.sku || `ID-${item.product_id}`;
                                     const unit = item.product?.unit_of_measure || 'units';
 
                                     const rawPrice = item.product?.unit_price ?? item.unit_price ?? 0;
-                                    const priceFormatted = new Intl.NumberFormat('en-US', {
+                                    const priceFormatted = new Intl.NumberFormat('es-CO', {
                                         style: 'currency',
-                                        currency: 'USD'
-                                    }).format(rawPrice);
+                                        currency: tenant?.currency || 'USD'
+                                    }).format(Number(rawPrice) || 0);
 
                                     const locationStr = item.location
                                         ? `${item.location.warehouse_code} (${item.location.aisle}-${item.location.shelf}-${item.location.level})`
                                         : 'Sin Ubicación';
 
                                     return (
-                                        <tr key={item.product_id || index} className="hover:bg-gray-800/30 transition-colors">
+                                        <tr key={`${item.product_id}-${item.location_id || index}`} className="hover:bg-gray-800/30 transition-colors">
                                             <td className="px-4 py-3.5">
                                                 <div className="flex items-center space-x-3">
                                                     <div className="w-8 h-8 rounded-lg bg-[#FE2C55]/10 border border-[#FE2C55]/20 text-[#FE2C55] flex items-center justify-center shrink-0">
@@ -258,23 +252,9 @@ const InventoryStock = () => {
                                                 }`}>
                                                     <span className={`w-1.5 h-1.5 rounded-full ${isLowStock ? 'bg-amber-400' : 'bg-[#05FF00]'}`}></span>
                                                     <span>
-                                                        {isLowStock ? `Stock bajo · ${currentStock}` : `Stock (Alto) · ${currentStock}`}
+                                                        {isLowStock ? `Stock bajo · ${currentStock}` : `Stock disponible · ${currentStock}`}
                                                     </span>
                                                 </span>
-                                            </td>
-                                            <td className="px-4 py-3.5 text-right">
-                                                <div className="flex items-center justify-end space-x-2">
-                                                    <button title="Editar Producto" className="p-1.5 text-gray-400 hover:text-white bg-gray-800/60 hover:bg-gray-700 rounded-lg border border-gray-700/50 transition cursor-pointer">
-                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                        </svg>
-                                                    </button>
-                                                    <button title="Eliminar Producto" className="p-1.5 text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-lg border border-red-500/20 transition cursor-pointer">
-                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                        </svg>
-                                                    </button>
-                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -351,7 +331,9 @@ const InventoryStock = () => {
                                     <div>
                                         <label className="block font-bold text-[10px] text-[#0DFC00] mb-1 uppercase">Precio <span className="text-[9px] text-gray-400">(Entero o Decimal)</span></label>
                                         <input
-                                            type="text"
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
                                             required
                                             placeholder="Ej. 35.75"
                                             value={formData.unit_price}
@@ -418,20 +400,8 @@ const InventoryStock = () => {
                             {/* Sección Movimiento de Stock */}
                             <div className="pt-2 border-t border-gray-800">
                                 <p className="text-[11px] font-semibold text-[#FE2C55] uppercase tracking-wider mb-2">3. Cantidad Inicial (Stock)</p>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">Tipo</label>
-                                        <select
-                                            value={formData.type}
-                                            onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                                            className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white focus:outline-none focus:border-[#FE2C55] cursor-pointer"
-                                        >
-                                            <option value="INBOUND">Entrada (INBOUND)</option>
-                                            <option value="OUTBOUND">Salida (OUTBOUND)</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">Cantidad</label>
+                                <div>
+                                        <label className="block text-[10px] text-gray-400 mb-1 uppercase">Unidades iniciales</label>
                                         <input
                                             type="number"
                                             required
@@ -441,7 +411,6 @@ const InventoryStock = () => {
                                             onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
                                             className="w-full px-3 py-2 bg-[#0C1017] border border-gray-800 rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55]"
                                         />
-                                    </div>
                                 </div>
                             </div>
 

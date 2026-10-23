@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const Login = () => {
-    const [serverCode, setServerCode] = useState('');
+    const location = useLocation();
+    const [serverCode, setServerCode] = useState(location.state?.serverCode || '');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [role, setRole] = useState('staff'); // 'staff' u 'operator'
@@ -13,6 +14,7 @@ const Login = () => {
 
     const { login } = useAuth();
     const navigate = useNavigate();
+    const registered = location.state?.registered === true;
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -54,6 +56,12 @@ const Login = () => {
                         Plataforma de gestión de inventario
                     </p>
                 </div>
+
+                {registered && (
+                    <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-3 rounded-xl text-sm text-center">
+                        Empresa creada. Conserva el código de servidor que aparece en el formulario para próximos inicios de sesión.
+                    </div>
+                )}
 
                 {/* Error Banner */}
                 {error && (
@@ -112,7 +120,8 @@ const Login = () => {
                         <input
                             type="text"
                             value={serverCode}
-                            onChange={(e) => setServerCode(e.target.value)}
+                            onChange={(e) => setServerCode(e.target.value.toUpperCase())}
+                            maxLength={17}
                             required
                             className="w-full px-4 py-3 bg-[#0C1017] border border-gray-800 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-[#FE2C55] focus:ring-1 focus:ring-[#FE2C55] transition-all duration-200 uppercase"
                             placeholder="Ej. JDU73-IEH83-OH382"
@@ -130,7 +139,7 @@ const Login = () => {
                             onChange={(e) => setEmail(e.target.value)}
                             required
                             className="w-full px-4 py-3 bg-[#0C1017] border border-gray-800 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-[#FE2C55] focus:ring-1 focus:ring-[#FE2C55] transition-all duration-200"
-                            placeholder="sarah.chen@chest.io"
+                            placeholder="usuario@empresa.com"
                         />
                     </div>
 
@@ -140,9 +149,6 @@ const Login = () => {
                             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400">
                                 Contraseña
                             </label>
-                            <a href="#" className="text-xs text-[#FE2C55] hover:underline font-medium">
-                                ¿Olvidaste tu contraseña?
-                            </a>
                         </div>
                         <input
                             type="password"

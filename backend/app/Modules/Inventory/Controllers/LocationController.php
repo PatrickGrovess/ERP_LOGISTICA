@@ -6,46 +6,42 @@ use App\Http\Controllers\Controller;
 use App\Modules\Inventory\Models\Location;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Exception;
 
 class LocationController extends Controller
 {
     public function index(): JsonResponse
     {
-        try {
-            return response()->json([
-                'status' => 'success',
-                'data' => Location::all()
-            ], 200);
-        } catch (Exception $e) {
-            return response()->json([
-                'message' => 'Error al obtener las ubicaciones: ' . $e->getMessage(),
-            ], 500);
-        }
+        $tenantId = auth('api')->user()->tenant_id;
+
+        return response()->json([
+            'status' => 'success',
+            'data' => Location::where('tenant_id', $tenantId)
+                ->orderBy('warehouse_code')->orderBy('aisle')->orderBy('shelf')->orderBy('level')->get(),
+        ]);
     }
 
     public function store(Request $request): JsonResponse
     {
-        try {
-            $validated = $request->validate([
-                'warehouse_code' => 'required|string|max:20',
-                'aisle'          => 'required|string|max:10',
-                'shelf'          => 'required|string|max:10',
-                'level'          => 'required|string|max:10',
-            ]);
+        $tenantId = auth('api')->user()->tenant_id;
+        $request->merge([
+            'warehouse_code' => strtoupper(trim((string) $request->input('warehouse_code'))),
+            'aisle' => strtoupper(trim((string) $request->input('aisle'))),
+            'shelf' => strtoupper(trim((string) $request->input('shelf'))),
+            'level' => strtoupper(trim((string) $request->input('level'))),
+        ]);
+        $validated = $request->validate([
+            'warehouse_code' => ['required', 'string', 'max:20'],
+            'aisle' => ['required', 'string', 'max:10'],
+            'shelf' => ['required', 'string', 'max:10'],
+            'level' => ['required', 'string', 'max:10'],
+        ]);
 
-            // El trait BelongsToTenant asignará el tenant_id automáticamente
-            $location = Location::create($validated);
+        $location = Location::firstOrCreate($validated + ['tenant_id' => $tenantId]);
 
-            return response()->json([
-                'message' => 'Ubicación creada exitosamente',
-                'data'    => $location
-            ], 201);
-
-        } catch (Exception $e) {
-            return response()->json([
-                'message' => 'Error al crear la ubicación: ' . $e->getMessage(),
-            ], 400);
-        }
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Ubicación disponible.',
+            'data' => $location,
+        ], 201);
     }
 }

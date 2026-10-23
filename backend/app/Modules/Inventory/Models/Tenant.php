@@ -4,6 +4,7 @@ namespace App\Modules\Inventory\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Database\Factories\TenantFactory;
 
 class Tenant extends Model
 {
@@ -17,7 +18,23 @@ class Tenant extends Model
         'max_products',
         'max_users',
         'max_movements',
+        'low_stock_threshold',
+        'currency',
+        'auto_notifications',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'low_stock_threshold' => 'integer',
+            'auto_notifications' => 'boolean',
+        ];
+    }
+
+    protected static function newFactory(): TenantFactory
+    {
+        return TenantFactory::new();
+    }
 
     public function users()
     {

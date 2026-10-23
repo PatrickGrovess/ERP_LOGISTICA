@@ -10,8 +10,11 @@ use Illuminate\Support\Facades\Auth;
 class TenantScope implements Scope
 {
     public function apply(Builder $builder, Model $model){
-        if(Auth::check() && Auth::user()->tenant_id) {
-            $builder->where($model->getTable() . '.tenant_id', Auth::user()->tenant_id);
+        $user = Auth::guard('api')->user() ?? Auth::user();
+        if ($user && !$user->tenant_id) {
+            $builder->whereRaw('1 = 0');
+        } elseif ($user) {
+            $builder->where($model->getTable() . '.tenant_id', $user->tenant_id);
         }
     }       
 }

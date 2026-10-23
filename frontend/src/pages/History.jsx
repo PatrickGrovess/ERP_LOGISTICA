@@ -1,13 +1,15 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 
 const Inventory = () => {
+    const location = useLocation();
     const { user } = useAuth();
     const [movements, setMovements] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [searchTerm, setSearchTerm] = useState('');
+    const [searchTerm, setSearchTerm] = useState(location.state?.searchQuery || '');
 
     // Estados para los selectores y existencias del modal
     const [productsList, setProductsList] = useState([]);
@@ -75,15 +77,20 @@ const Inventory = () => {
         fetchOptions();
     }, []);
 
+    useEffect(() => {
+        setSearchTerm(location.state?.searchQuery || '');
+    }, [location.key]);
+
     // Calcular stock actual y ubicación automática del producto seleccionado
     const selectedProductStockInfo = useMemo(() => {
         if (!formData.product_id) return { currentStock: 0, locationId: '' };
-        const found = stockSummary.find(s => Number(s.product_id) === Number(formData.product_id));
+        const found = stockSummary.find(s => Number(s.product_id) === Number(formData.product_id)
+            && Number(s.location_id) === Number(formData.location_id));
         return {
             currentStock: Number(found?.current_stock || 0),
             locationId: found?.location_id || ''
         };
-    }, [formData.product_id, stockSummary]);
+    }, [formData.product_id, formData.location_id, stockSummary]);
 
     // Manejar cambio de producto para autoseleccionar su ubicación asociada en segundo plano
     const handleProductChange = (productId) => {
@@ -91,7 +98,7 @@ const Inventory = () => {
         setFormData(prev => ({
             ...prev,
             product_id: productId,
-            location_id: found?.location_id || prev.location_id
+            location_id: found?.location_id || locationsList[0]?.id || ''
         }));
     };
 
@@ -132,10 +139,11 @@ const Inventory = () => {
                     quantity: 1
                 });
             }
-            fetchMovements();
-            fetchOptions(); // Actualizar stock general
+            await fetchMovements();
+            await fetchOptions(); // Actualizar stock general
         } catch (err) {
-            const msg = err.response?.data?.message || 'Error al registrar el movimiento.';
+            const validationErrors = Object.values(err.response?.data?.errors || {}).flat();
+            const msg = validationErrors[0] || err.response?.data?.message || 'Error al registrar el movimiento.';
             setFormError(msg);
         } finally {
             setSubmitLoading(false);
@@ -337,8 +345,24 @@ const Inventory = () => {
                                 </span>
                             </div>
 
-                            {/* Ubicación asignada automáticamente en segundo plano (Oculta al usuario) */}
-                            <input type="hidden" value={formData.location_id} />
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
+                                    Ubicación
+                                </label>
+                                <select
+                                    required
+                                    value={formData.location_id}
+                                    onChange={(e) => setFormData({ ...formData, location_id: e.target.value })}
+                                    className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:border-[#FE2C55] transition cursor-pointer"
+                                >
+                                    <option value="" disabled>Seleccione una ubicación...</option>
+                                    {locationsList.map((location) => (
+                                        <option key={location.id} value={location.id}>
+                                            {location.warehouse_code} · {location.aisle}-{location.shelf}-{location.level}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
 
                             {/* Tipo de Movimiento */}
                             <div>

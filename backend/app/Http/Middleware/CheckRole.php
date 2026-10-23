@@ -18,6 +18,14 @@ class CheckRole
     {
         $user = auth("api")->user();
 
+        if ($user && ($user->status !== 'active' || in_array($user->tenant?->status, ['suspended', 'cancelled'], true))) {
+            return response()->json([
+                "status" => "error",
+                "message" => "La cuenta o la empresa no están habilitadas.",
+                "code" => 403,
+            ], 403);
+        }
+
         // Si no hay usuario o su rol NO está dentro del arreglo de roles permitidos
         if (! $user || ! in_array($user->role, $roles)) {
             return response()->json([

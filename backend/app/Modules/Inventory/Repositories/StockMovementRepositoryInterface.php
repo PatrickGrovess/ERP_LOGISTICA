@@ -9,5 +9,5 @@ interface StockMovementRepositoryInterface
 {
     public function create(StockMovementDTO $stockMovementDTO): StockMovement;
 
-    public function getCurrentStock(int $productId): int;
+    public function getCurrentStock(int $tenantId, int $productId, int $locationId): int;
 }

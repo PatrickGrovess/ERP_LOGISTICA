@@ -4,84 +4,66 @@ namespace App\Modules\Inventory\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Inventory\Models\User;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
-use Exception;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
-    public function update(Request $request, $id): JsonResponse
+    public function update(Request $request, int $id): JsonResponse
     {
-        try {
-            // Autenticar que el usuario que hace la petición sea admin o staff
-            $authUser = JWTAuth::parseToken()->authenticate();
-            if (!in_array(strtolower($authUser->role), ['staff', 'admin'])) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'No tienes permisos para modificar usuarios.'
-                ], 403);
-            }
+        $actor = $request->user('api');
+        $target = User::where('tenant_id', $actor->tenant_id)->findOrFail($id);
 
-            // Buscar el usuario dentro del mismo tenant para mantener la seguridad multi-tenant
-            $targetUser = User::where('id', $id)
-                ->where('tenant_id', $authUser->tenant_id)
-                ->first();
-
-            if (!$targetUser) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Usuario no encontrado.'
-                ], 404);
-            }
-
-            // Validar y actualizar los campos enviados (status o role)
-            $validated = $request->validate([
-                'status' => 'sometimes|string|in:Active,Restricted,active,restricted',
-                'role'   => 'sometimes|string|in:staff,admin,operator',
-            ]);
-
-            if (isset($validated['status'])) {
-                // Si guardas el estado tal cual o normalizado (ej: 'Active' / 'Restricted')
-                $targetUser->status = ucfirst(strtolower($validated['status']));
-            }
-
-            if (isset($validated['role'])) {
-                $targetUser->role = strtolower($validated['role']);
-            }
-
-            $targetUser->save();
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Usuario actualizado exitosamente',
-                'data' => $targetUser
-            ], 200);
-        } catch (Exception $e) {
+        // El usuario responsable no se puede bloquear ni degradar desde gestión de equipo.
+        if ($target->id === $actor->id || $target->role === 'staff') {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Error al actualizar el usuario: ' . $e->getMessage()
-            ], 400);
+                'message' => 'No se puede modificar la cuenta responsable ni la sesión actual.',
+            ], 403);
         }
+
+        if ($actor->role === 'admin' && $target->role !== 'operator') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Un administrador solo puede gestionar operadores.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'status' => ['sometimes', 'string', Rule::in(['active', 'restricted'])],
+            'role' => ['sometimes', 'string', Rule::in(['admin', 'operator'])],
+        ]);
+
+        if ($validated === []) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Indica el estado o el rol que quieres actualizar.',
+            ], 422);
+        }
+
+        if ($actor->role === 'admin' && ($validated['role'] ?? null) === 'admin') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Solo el responsable de la empresa puede asignar el rol de administrador.',
+            ], 403);
+        }
+
+        $target->fill($validated)->save();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Usuario actualizado.',
+            'data' => $target->fresh(),
+        ]);
     }
 
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        try {
-            $authUser = JWTAuth::parseToken()->authenticate();
+        $users = User::where('tenant_id', $request->user('api')->tenant_id)
+            ->orderBy('name')
+            ->get();
 
-            // Traer todos los usuarios del mismo tenant
-            $users = User::where('tenant_id', $authUser->tenant_id)->get();
-
-            return response()->json([
-                'status' => 'success',
-                'data' => $users
-            ], 200);
-        } catch (Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Error al obtener los usuarios: ' . $e->getMessage()
-            ], 500);
-        }
+        return response()->json(['status' => 'success', 'data' => $users]);
     }
 }

@@ -16,7 +16,6 @@ class Product extends Model
         "description",
         'unit_of_measure',
         'unit_price',
-        'price'
     ];
 
     public function tenant() {

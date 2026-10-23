@@ -1,66 +1,107 @@
-import {createContext, useState, useEffect, useContext} from "react";
-import api from "../api/axios";
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import api from '../api/axios';
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
-export const AuthProvider = ({children}) => {
-    const [user, setUser] = useState(() => {
-        const savedUser = localStorage.getItem("user");
-        return savedUser ? JSON.parse(savedUser) : null;
-    });
-    const [token, setToken] = useState(localStorage.getItem("token") || null);
+const readStoredJson = (key) => {
+    try {
+        return JSON.parse(localStorage.getItem(key) || 'null');
+    } catch {
+        localStorage.removeItem(key);
+        return null;
+    }
+};
+
+export const AuthProvider = ({ children }) => {
+    const [user, setUser] = useState(() => readStoredJson('user'));
+    const [tenant, setTenant] = useState(() => readStoredJson('tenant'));
+    const [token, setToken] = useState(() => localStorage.getItem('token'));
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const initializeAuth = async () => {
-            if (token) {
-                try {
-                    // Petición a /auth/me para revalidar la sesión
-                    const response = await api.get("v1/auth/me");
+    const clearSession = useCallback(() => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('tenant');
+        setToken(null);
+        setUser(null);
+        setTenant(null);
+    }, []);
 
-                    const userData = response.data.user || response.data; // Ajusta según la estructura de la respuesta
-                    setUser(userData);
-                } catch (error) {
-                    console.error('Error al revalidar sesión:', error);
-                    logout();
-                }
+    useEffect(() => {
+        let active = true;
+
+        const initializeAuth = async () => {
+            if (!token) {
+                setLoading(false);
+                return;
             }
-            setLoading(false);
+
+            setLoading(true);
+            try {
+                const response = await api.get('v1/auth/me');
+                if (!active) return;
+
+                const userData = response.data.user || null;
+                const tenantData = response.data.tenant || null;
+                setUser(userData);
+                setTenant(tenantData);
+                localStorage.setItem('user', JSON.stringify(userData));
+                localStorage.setItem('tenant', JSON.stringify(tenantData));
+            } catch {
+                if (active) clearSession();
+            } finally {
+                if (active) setLoading(false);
+            }
         };
 
         initializeAuth();
-    }, [token]);
+        return () => { active = false; };
+    }, [token, clearSession]);
 
     const login = async (credentials) => {
-        const response = await api.post("v1/auth/login", credentials);
-        
-        const {authorisation , user: userData} = response.data;
-
+        const response = await api.post('v1/auth/login', credentials);
+        const { authorisation, user: userData, tenant: tenantData } = response.data;
         const newToken = authorisation.token;
-        
-        localStorage.setItem("token", newToken);
-        localStorage.setItem("user", JSON.stringify(userData));
 
+        localStorage.setItem('token', newToken);
+        localStorage.setItem('user', JSON.stringify(userData));
+        localStorage.setItem('tenant', JSON.stringify(tenantData));
         setToken(newToken);
         setUser(userData);
+        setTenant(tenantData);
 
         return response.data;
-    }
-
-    const register = async (userData) => {
-        const response = await api.post("v1/auth/register", userData);
-        return response.data;
-    }
-
-    const logout = () => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        setToken(null);
-        setUser(null);
     };
 
+    const register = async (userData) => {
+        const response = await api.post('v1/auth/register', userData);
+        return response.data;
+    };
+
+    const logout = async () => {
+        try {
+            if (token) await api.post('v1/auth/logout');
+        } catch {
+            // La sesión local se elimina aunque el token ya haya expirado o el servidor no responda.
+        } finally {
+            clearSession();
+        }
+    };
+
+    const updateUser = useCallback((userData) => {
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+    }, []);
+
+    const updateTenant = useCallback((tenantData) => {
+        setTenant(tenantData);
+        localStorage.setItem('tenant', JSON.stringify(tenantData));
+    }, []);
+
     return (
-        <AuthContext.Provider value={{user, token, login, register, logout, loading}}>
+        <AuthContext.Provider value={{
+            user, tenant, token, login, register, logout, loading, updateUser, updateTenant,
+        }}>
             {children}
         </AuthContext.Provider>
     );
@@ -68,8 +109,6 @@ export const AuthProvider = ({children}) => {
 
 export const useAuth = () => {
     const context = useContext(AuthContext);
-    if (!context) {
-        throw new Error("useAuth must be used within an AuthProvider");
-    }
+    if (!context) throw new Error('useAuth must be used within an AuthProvider');
     return context;
-}
+};

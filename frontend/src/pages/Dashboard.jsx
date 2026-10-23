@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import api from '../api/axios';
+import { useAuth } from '../context/AuthContext';
 
 const Dashboard = () => {
+    const { tenant } = useAuth();
+    const lowStockThreshold = Number(tenant?.low_stock_threshold ?? 10);
     const [stockData, setStockData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -58,27 +61,43 @@ const Dashboard = () => {
         return acc + (price * stock);
     }, 0);
 
-    // 2. Alertas de Stock Bajo (Evalúa min_stock si existe, o umbral por defecto de 10)
-    const lowStockItems = stockData.filter(item => {
+    const productsSummary = Object.values(stockData.reduce((summary, item) => {
+        const productId = String(item.product_id);
+        if (!summary[productId]) {
+            summary[productId] = {
+                ...item,
+                current_stock: 0,
+                total_inbound: 0,
+                total_outbound: 0,
+            };
+        }
+        summary[productId].current_stock += Number(item.current_stock || 0);
+        summary[productId].total_inbound += Number(item.total_inbound || 0);
+        summary[productId].total_outbound += Number(item.total_outbound || 0);
+        return summary;
+    }, {}));
+
+    // Las alertas se calculan sobre el saldo consolidado del producto en todas sus ubicaciones.
+    const lowStockItems = productsSummary.filter(item => {
         const current = Number(item.current_stock || 0);
-        const limit = item.min_stock !== undefined ? Number(item.min_stock) : 10;
+        const limit = item.min_stock !== undefined ? Number(item.min_stock) : lowStockThreshold;
         return current <= limit;
     });
     const lowStockAlerts = lowStockItems.length;
 
     // 3. SKUs o Referencias Únicas
-    const totalReferences = stockData.length;
+    const totalReferences = productsSummary.length;
 
     // 4. Entradas y Salidas Históricas Consolidadas
     const overallInbound = stockData.reduce((acc, curr) => acc + Number(curr.total_inbound || 0), 0);
     const overallOutbound = stockData.reduce((acc, curr) => acc + Number(curr.total_outbound || 0), 0);
 
     // 5. Productos de Mayor Rotación (Top 5 Outbound)
-    const topMoversData = [...stockData]
+    const topMoversData = [...productsSummary]
         .sort((a, b) => Number(b.total_outbound || 0) - Number(a.total_outbound || 0))
         .slice(0, 5)
         .map(item => {
-            const maxOutbound = Math.max(...stockData.map(s => Number(s.total_outbound || 0)), 1);
+            const maxOutbound = Math.max(...productsSummary.map(s => Number(s.total_outbound || 0)), 1);
             const value = Number(item.total_outbound || 0);
             const percentage = (value / maxOutbound) * 100;
             return {
@@ -99,7 +118,7 @@ const Dashboard = () => {
             {/* Header */}
             <div>
                 <h1 className="text-2xl font-bold text-white tracking-tight">Dashboard de Inventario</h1>
-                <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs text-gray-400 mt-1">
                     {new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} · Estado y rendimiento general del almacén
                 </p>
             </div>
@@ -122,7 +141,7 @@ const Dashboard = () => {
                     </div>
                     <div>
                         <p className="text-3xl font-extrabold text-[#0DFC00] tracking-tight">
-                            ${totalInventoryValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {new Intl.NumberFormat('es-CO', { style: 'currency', currency: tenant?.currency || 'USD' }).format(totalInventoryValue)}
                         </p>
                         <p className="text-xs font-medium text-gray-400 flex items-center space-x-1 mt-1">
                             <span>Valor total de los productos</span>
@@ -169,7 +188,7 @@ const Dashboard = () => {
                             {lowStockAlerts}
                         </p>
                         <p className="text-xs font-medium text-amber-400/90 flex items-center space-x-1 mt-1">
-                            <span className="text-gray-400">{lowStockAlerts === 1 ? '1 producto por debajo del mínimo (10 o menos unidades)' : `${lowStockAlerts} productos por debajo del mínimo`}</span>
+                            <span className="text-gray-400">{lowStockAlerts === 1 ? `1 producto con ${lowStockThreshold} unidades o menos` : `${lowStockAlerts} productos con stock bajo`}</span>
                         </p>
                     </div>
                 </div>

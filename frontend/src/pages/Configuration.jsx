@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import api from '../api/axios';
 
 // Configuración de pestañas escalable
 const TABS = [
@@ -11,7 +12,7 @@ const TABS = [
 ];
 
 const Settings = () => {
-    const { user } = useAuth();
+    const { user, tenant, updateUser, updateTenant } = useAuth();
     const [activeTab, setActiveTab] = useState('profile');
 
     // Verificar si el usuario es Admin u Owner
@@ -34,12 +35,43 @@ const Settings = () => {
 
     // --- ESTADOS: SISTEMA ---
     const [systemData, setSystemData] = useState({
-        company_name: 'Mi Empresa S.A.',
-        low_stock_threshold: 5,
-        currency: 'USD',
-        auto_notifications: true
+        company_name: tenant?.name || '',
+        low_stock_threshold: tenant?.low_stock_threshold ?? 10,
+        currency: tenant?.currency || 'USD',
+        auto_notifications: tenant?.auto_notifications ?? true
     });
     const [systemStatus, setSystemStatus] = useState({ loading: false, error: '', success: '' });
+
+    useEffect(() => {
+        setProfileData((previous) => ({
+            ...previous,
+            name: user?.name || '',
+            email: user?.email || '',
+        }));
+    }, [user]);
+
+    useEffect(() => {
+        if (!isAdmin) return undefined;
+
+        let active = true;
+        api.get('v1/settings')
+            .then(({ data }) => {
+                if (!active) return;
+                const tenantData = data.data;
+                updateTenant(tenantData);
+                setSystemData({
+                    company_name: tenantData.name,
+                    low_stock_threshold: tenantData.low_stock_threshold,
+                    currency: tenantData.currency,
+                    auto_notifications: tenantData.auto_notifications,
+                });
+            })
+            .catch(() => {
+                if (active) setSystemStatus({ loading: false, error: 'No se pudo cargar la configuración de la empresa.', success: '' });
+            });
+
+        return () => { active = false; };
+    }, [isAdmin, updateTenant]);
 
     // Handlers de cambio de input dinámicos
     const handleProfileChange = (e) => {
@@ -66,13 +98,22 @@ const Settings = () => {
         }
 
         try {
-            // API Call: await api.put('/user/profile', profileData);
+            const { data } = await api.patch('v1/auth/profile', {
+                name: profileData.name,
+                email: profileData.email,
+                current_password: profileData.current_password || undefined,
+                new_password: profileData.new_password || undefined,
+                new_password_confirmation: profileData.confirm_password || undefined,
+            });
+            updateUser(data.user);
             setProfileStatus({ loading: false, error: '', success: 'Perfil actualizado correctamente.' });
             setProfileData(prev => ({ ...prev, current_password: '', new_password: '', confirm_password: '' }));
         } catch (err) {
             setProfileStatus({
                 loading: false,
-                error: err.response?.data?.message || 'Error al actualizar el perfil.',
+                error: Object.values(err.response?.data?.errors || {}).flat()[0]
+                    || err.response?.data?.message
+                    || 'Error al actualizar el perfil.',
                 success: ''
             });
         }
@@ -86,12 +127,20 @@ const Settings = () => {
         setSystemStatus({ loading: true, error: '', success: '' });
 
         try {
-            // API Call: await api.put('/system/settings', systemData);
+            const { data } = await api.put('v1/settings', {
+                name: systemData.company_name,
+                low_stock_threshold: Number(systemData.low_stock_threshold),
+                currency: systemData.currency,
+                auto_notifications: systemData.auto_notifications,
+            });
+            updateTenant(data.data);
             setSystemStatus({ loading: false, error: '', success: 'Configuración del sistema guardada.' });
         } catch (err) {
             setSystemStatus({
                 loading: false,
-                error: err.response?.data?.message || 'Error al guardar la configuración.',
+                error: Object.values(err.response?.data?.errors || {}).flat()[0]
+                    || err.response?.data?.message
+                    || 'Error al guardar la configuración.',
                 success: ''
             });
         }
@@ -147,7 +196,7 @@ const Settings = () => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
-                                    Nombre Completo
+                                    Nombre completo
                                 </label>
                                 <input
                                     type="text"
@@ -161,7 +210,7 @@ const Settings = () => {
 
                             <div>
                                 <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
-                                    Correo Electrónico
+                                    Correo electrónico
                                 </label>
                                 <input
                                     type="email"
@@ -180,7 +229,7 @@ const Settings = () => {
 
                         <div>
                             <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
-                                Contraseña Actual
+                                    Contraseña actual
                             </label>
                             <input
                                 type="password"
@@ -194,11 +243,13 @@ const Settings = () => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
-                                    Nueva Contraseña
+                                    Nueva contraseña (mínimo 10 caracteres)
                                 </label>
                                 <input
                                     type="password"
                                     name="new_password"
+                                    minLength={10}
+                                    maxLength={255}
                                     value={profileData.new_password}
                                     onChange={handleProfileChange}
                                     className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:border-[#FE2C55] transition"
@@ -207,7 +258,7 @@ const Settings = () => {
 
                             <div>
                                 <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wider">
-                                    Confirmar Nueva Contraseña
+                                    Confirmar nueva contraseña
                                 </label>
                                 <input
                                     type="password"
@@ -232,7 +283,7 @@ const Settings = () => {
                 </div>
             )}
 
-            {/* SECCIÓN 2: SISTEMA (Restringido solo a Admin / Owner) */}
+            {/* SECCIÓN 2: SISTEMA (solo responsable de la empresa) */}
             {activeTab === 'system' && isAdmin && (
                 <div className="bg-[#161B22] border border-gray-800 rounded-2xl p-6 shadow-xl space-y-6">
                     <div className="flex justify-between items-center">
@@ -281,6 +332,7 @@ const Settings = () => {
                                     <option value="USD">USD ($)</option>
                                     <option value="EUR">EUR (€)</option>
                                     <option value="PAB">PAB (B/.)</option>
+                                    <option value="COP">COP ($)</option>
                                 </select>
                             </div>
                         </div>
@@ -292,7 +344,7 @@ const Settings = () => {
                             <input
                                 type="number"
                                 name="low_stock_threshold"
-                                min="1"
+                                min="0"
                                 value={systemData.low_stock_threshold}
                                 onChange={handleSystemChange}
                                 className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white focus:outline-none focus:border-[#FE2C55] transition"
@@ -309,7 +361,7 @@ const Settings = () => {
                                 className="w-4 h-4 rounded border-gray-800 bg-[#0C1017] text-[#FE2C55] focus:ring-0 focus:ring-offset-0 cursor-pointer"
                             />
                             <label htmlFor="auto_notifications" className="text-xs text-gray-300 cursor-pointer select-none">
-                                Activar alertas automáticas al detectar stock crítico
+                                Mostrar avisos de productos bajo el umbral en el panel superior
                             </label>
                         </div>
 

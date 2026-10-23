@@ -10,9 +10,6 @@ const Register = () => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     
-    // Por defecto inicia en 'staff' (Dueño), ya que este formulario es para crear la empresa
-    const [role, setRole] = useState('staff'); 
-    
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -61,11 +58,12 @@ const Register = () => {
                 name,
                 email,
                 password,
-                role
+                password_confirmation: confirmPassword,
             });
-            navigate('/login');
+            navigate('/login', { state: { serverCode: formattedCode, registered: true } });
         } catch (error) {
-            const message = error.response?.data?.message || 'Error al registrar la empresa';
+            const validationErrors = Object.values(error.response?.data?.errors || {}).flat();
+            const message = validationErrors[0] || error.response?.data?.message || 'Error al registrar la empresa';
             setError(message);
         } finally {
             setLoading(false);
@@ -174,6 +172,8 @@ const Register = () => {
                             className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55] transition"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
+                            minLength={10}
+                            maxLength={255}
                             required
                         />
                     </div>
@@ -189,6 +189,8 @@ const Register = () => {
                             className="w-full px-3.5 py-2.5 bg-[#0C1017] border border-gray-800 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#FE2C55] transition"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
+                            minLength={10}
+                            maxLength={255}
                             required
                         />
                     </div>

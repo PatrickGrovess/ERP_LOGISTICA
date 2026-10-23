@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
 
 const Layout = () => {
-    const { user, logout } = useAuth();
+    const { user, tenant, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -22,9 +22,10 @@ const Layout = () => {
     const [totalStock, setTotalStock] = useState(0);
     const [totalUsers, setTotalUsers] = useState(0);
     const [totalMovements, setTotalMovements] = useState(0);
+    const [lowStockItems, setLowStockItems] = useState([]);
 
-    const handleLogout = () => {
-        logout();
+    const handleLogout = async () => {
+        await logout();
         navigate('/login');
     };
 
@@ -38,22 +39,31 @@ const Layout = () => {
     useEffect(() => {
         const fetchNavCounts = async () => {
             try {
-                // 1. Stock total y productos
-                const stockRes = await api.get('/inventory/products');
-                const products = Array.isArray(stockRes.data) ? stockRes.data : (stockRes.data?.data || []);
-                if (Array.isArray(products)) {
-                    const stockSum = products.reduce((acc, item) => acc + (Number(item.stock) || 0), 0);
+                // Cargar información real del tenant para contadores y avisos de stock bajo.
+                const stockRes = await api.get('/inventory/stock');
+                const stocks = Array.isArray(stockRes.data) ? stockRes.data : (stockRes.data?.data || []);
+                if (Array.isArray(stocks)) {
+                    const stockSum = stocks.reduce((acc, item) => acc + (Number(item.current_stock) || 0), 0);
                     setTotalStock(stockSum);
+
+                    const byProduct = stocks.reduce((summary, item) => {
+                        const productId = String(item.product_id);
+                        if (!summary[productId]) {
+                            summary[productId] = { ...item, current_stock: 0 };
+                        }
+                        summary[productId].current_stock += Number(item.current_stock || 0);
+                        return summary;
+                    }, {});
+                    const threshold = Number(tenant?.low_stock_threshold ?? 10);
+                    setLowStockItems(Object.values(byProduct).filter((item) => Number(item.current_stock) <= threshold));
                 }
 
-                // 2. Total de usuarios del tenant
-                const usersRes = await api.get('/inventory/users');
-                const usersList = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data?.data || []);
-                if (Array.isArray(usersList)) {
-                    setTotalUsers(usersList.length);
+                if (['staff', 'admin'].includes(user?.role)) {
+                    const usersRes = await api.get('/inventory/users');
+                    const usersList = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data?.data || []);
+                    if (Array.isArray(usersList)) setTotalUsers(usersList.length);
                 }
 
-                // 3. Total de movimientos para el historial
                 const movementsRes = await api.get('/inventory/movements');
                 const movementsList = Array.isArray(movementsRes.data) ? movementsRes.data : (movementsRes.data?.data || []);
                 if (Array.isArray(movementsList)) {
@@ -65,20 +75,26 @@ const Layout = () => {
         };
 
         fetchNavCounts();
-    }, [location.pathname]);
+    }, [location.pathname, tenant?.low_stock_threshold, user?.role]);
 
     // Manejar búsqueda global
     const handleGlobalSearch = (e) => {
         e.preventDefault();
         if (!searchQuery.trim()) return;
-        const query = searchQuery.toLowerCase();
-        if (query.includes('user') || query.includes('usuario')) {
-            navigate('/users');
-        } else if (query.includes('mov') || query.includes('historial')) {
-            navigate('/history');
-        } else {
-            navigate('/stock');
+        const query = searchQuery.trim();
+        let path = '/stock';
+        let filter = query;
+
+        if (/^(users?|usuarios?)\b/i.test(query) && ['staff', 'admin'].includes(user?.role)) {
+            path = '/users';
+            filter = query.replace(/^(users?|usuarios?)\s*/i, '');
+        } else if (/^(movimientos?|historial)\b/i.test(query)) {
+            path = '/history';
+            filter = query.replace(/^(movimientos?|historial)\s*/i, '');
         }
+
+        navigate(path, { state: { searchQuery: filter } });
+        setSearchQuery('');
     };
 
     // Función auxiliar para determinar si un enlace está activo
@@ -176,24 +192,26 @@ const Layout = () => {
                             </span>
                         </Link>
 
-                        <Link
-                            to="/users"
-                            className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
-                                isActive('/users')
-                                    ? 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
-                                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
-                            }`}
-                        >
-                            <div className="flex items-center space-x-3">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                                </svg>
-                                <span>Usuarios</span>
-                            </div>
-                            <span className="text-xs bg-[#161B22] text-gray-300 px-2 py-0.5 rounded-lg border border-gray-800 font-mono">
-                                {totalUsers}
-                            </span>
-                        </Link>
+                        {['staff', 'admin'].includes(user?.role) && (
+                            <Link
+                                to="/users"
+                                className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+                                    isActive('/users')
+                                        ? 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
+                                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
+                                }`}
+                            >
+                                <div className="flex items-center space-x-3">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                    </svg>
+                                    <span>Usuarios</span>
+                                </div>
+                                <span className="text-xs bg-[#161B22] text-gray-300 px-2 py-0.5 rounded-lg border border-gray-800 font-mono">
+                                    {totalUsers}
+                                </span>
+                            </Link>
+                        )}
 
                         <Link
                             to="/history"
@@ -215,9 +233,9 @@ const Layout = () => {
                         </Link>
 
                         <Link
-                            to="/Configuration"
+                            to="/configuration"
                             className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
-                                isActive('/Configuration')
+                                isActive('/configuration')
                                     ? 'bg-[#FE2C55]/10 text-[#FE2C55] border border-[#FE2C55]/20'
                                     : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40'
                             }`}
@@ -272,7 +290,7 @@ const Layout = () => {
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Buscar en inventario, SKUs, usuarios..."
+                            placeholder="Buscar producto/SKU o escribe ‘usuario’ o ‘movimiento’ primero"
                             className="w-full pl-11 pr-4 py-2.5 bg-[#161B22] border border-gray-800 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#FE2C55] transition shadow-inner"
                         />
                     </form>
@@ -281,7 +299,7 @@ const Layout = () => {
                     {user?.role === 'staff' && (
                         <div className="hidden md:flex flex-col text-right shrink-0">
                             <span className="text-xs font-bold text-white tracking-wide">
-                                {user?.tenant?.name || 'Mi Empresa'}
+                                {tenant?.name || 'Empresa'}
                             </span>
                             <div
                                 onClick={() => setShowServerCode(!showServerCode)}
@@ -290,7 +308,7 @@ const Layout = () => {
                             >
                                 <span className="font-mono tracking-wider">
                                     {showServerCode
-                                        ? (user?.tenant?.server_code || 'JDU73-IEH83-OH382')
+                                        ? (tenant?.server_code || 'Código no disponible')
                                         : '•••••-•••••-•••••'}
                                 </span>
                                 <svg className="w-3.5 h-3.5 text-gray-500 group-hover:text-gray-300 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -306,15 +324,18 @@ const Layout = () => {
 
                     {/* Perfil e Iconos del Header */}
                     <div className="flex items-center space-x-3 sm:space-x-4 shrink-0">
-                        {/* Botón de Notificaciones que abre el panel derecho */}
                         <button
                             onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                            aria-label={`Avisos de stock bajo: ${lowStockItems.length}`}
+                            aria-expanded={isNotificationsOpen}
                             className="relative p-2.5 text-gray-400 hover:text-white bg-[#161B22] border border-gray-800 rounded-xl transition cursor-pointer"
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 01-6 0v-1m6 0H9" />
                             </svg>
-                            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#FE2C55] rounded-full"></span>
+                            {tenant?.auto_notifications && lowStockItems.length > 0 && (
+                                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#FE2C55] rounded-full"></span>
+                            )}
                         </button>
 
                         <div className="flex items-center space-x-3 bg-[#161B22] border border-gray-800 rounded-xl px-3 py-1.5">
@@ -360,38 +381,32 @@ const Layout = () => {
                                 </button>
                             </div>
 
-                            {/* Contenido de Notificaciones */}
                             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                                <div className="p-3.5 bg-[#0C1017] border border-gray-800 rounded-xl space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-white">Stock Actualizado</span>
-                                        <span className="text-[10px] text-gray-500">Hace 5 min</span>
-                                    </div>
-                                    <p className="text-xs text-gray-400">Se registró un movimiento de entrada exitoso en el sistema.</p>
-                                </div>
-                                <div className="p-3.5 bg-[#0C1017] border border-gray-800 rounded-xl space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-white">Nuevo Miembro</span>
-                                        <span className="text-[10px] text-gray-500">Hace 1 hora</span>
-                                    </div>
-                                    <p className="text-xs text-gray-400">Una nueva cuenta de operador fue creada correctamente.</p>
-                                </div>
-                                <div className="p-3.5 bg-[#0C1017] border border-gray-800 rounded-xl space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-white">Sistema Multi-tenant</span>
-                                        <span className="text-[10px] text-gray-500">Hoy</span>
-                                    </div>
-                                    <p className="text-xs text-gray-400">Sincronización de base de datos completada sin errores.</p>
-                                </div>
+                                {!tenant?.auto_notifications ? (
+                                    <p className="text-xs text-gray-400">Los avisos automáticos están desactivados en la configuración de la empresa.</p>
+                                ) : lowStockItems.length === 0 ? (
+                                    <p className="text-xs text-gray-400">No hay productos por debajo del umbral de {tenant?.low_stock_threshold ?? 10} unidades.</p>
+                                ) : (
+                                    lowStockItems.map((item) => (
+                                        <button
+                                            key={item.product_id}
+                                            onClick={() => { setIsNotificationsOpen(false); navigate('/stock'); }}
+                                            className="w-full p-3.5 bg-[#0C1017] border border-amber-500/20 rounded-xl text-left hover:border-amber-500/50 transition"
+                                        >
+                                            <span className="block text-xs font-bold text-white">{item.product?.name || `Producto #${item.product_id}`}</span>
+                                            <span className="block text-[10px] text-amber-400 mt-1">Stock disponible: {item.current_stock} {item.product?.unit_of_measure || 'unidades'}</span>
+                                        </button>
+                                    ))
+                                )}
                             </div>
 
                             {/* Footer del Panel */}
                             <div className="p-4 border-t border-gray-800 text-center">
                                 <button
-                                    onClick={() => setIsNotificationsOpen(false)}
+                                    onClick={() => { setIsNotificationsOpen(false); navigate('/stock'); }}
                                     className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-xs font-semibold text-gray-300 rounded-xl transition cursor-pointer"
                                 >
-                                    Cerrar Panel
+                                    Ir al inventario
                                 </button>
                             </div>
                         </div>

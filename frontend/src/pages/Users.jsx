@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 
 const Users = () => {
+    const location = useLocation();
     const { user } = useAuth();
     const isAdmin = ['staff', 'admin'].includes(user?.role?.toLowerCase());
 
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [actionError, setActionError] = useState('');
+    const [searchTerm, setSearchTerm] = useState(location.state?.searchQuery || '');
 
     // Modal para invitar / crear usuario con contraseña temporal
     const [showInviteModal, setShowInviteModal] = useState(false);
@@ -43,34 +47,47 @@ const Users = () => {
         fetchUsers();
     }, []);
 
+    useEffect(() => {
+        setSearchTerm(location.state?.searchQuery || '');
+    }, [location.key]);
+
+    const filteredUsers = useMemo(() => {
+        const query = searchTerm.trim().toLowerCase();
+        if (!query) return users;
+        return users.filter((member) => [member.name, member.email, member.role]
+            .some((value) => String(value || '').toLowerCase().includes(query)));
+    }, [users, searchTerm]);
+
     // Métricas para la interfaz visual
     const totalUsers = users.length;
-    const adminCount = users.filter(u => u.role?.toLowerCase() === 'admin' || u.role?.toLowerCase() === 'staff').length;
+    const adminCount = users.filter(u => u.role?.toLowerCase() === 'admin').length;
     const activeCount = users.filter(u => u.status?.toLowerCase() === 'active' || !u.status).length;
     const restrictedCount = totalUsers - activeCount;
 
     // Toggle de estado de acceso
     const handleToggleAccess = async (targetUser) => {
         if (!isAdmin) return;
+        setActionError('');
         const currentStatus = targetUser.status || 'Active';
         const newStatus = currentStatus.toLowerCase() === 'active' ? 'Restricted' : 'Active';
         try {
-            await api.patch(`/users/${targetUser.id}`, { status: newStatus });
-            setUsers(users.map(u => u.id === targetUser.id ? { ...u, status: newStatus } : u));
+            await api.patch(`/v1/auth/users/${targetUser.id}`, { status: newStatus.toLowerCase() });
+            setUsers((current) => current.map(u => u.id === targetUser.id ? { ...u, status: newStatus.toLowerCase() } : u));
         } catch (err) {
-            console.error('Error al cambiar el acceso del usuario', err);
+            setActionError(err.response?.data?.message || 'No se pudo cambiar el acceso del usuario.');
         }
     };
 
     // Cambiar rol
     const handleChangeRole = async (targetUser) => {
-        if (!isAdmin) return;
+        if (user?.role !== 'staff') return;
+        setActionError('');
         const newRole = targetUser.role?.toLowerCase() === 'admin' ? 'operator' : 'admin';
         try {
-            await api.patch(`/users/${targetUser.id}`, { role: newRole });
-            setUsers(users.map(u => u.id === targetUser.id ? { ...u, role: newRole } : u));
+            await api.patch(`/v1/auth/users/${targetUser.id}`, { role: newRole });
+            setUsers((current) => current.map(u => u.id === targetUser.id ? { ...u, role: newRole } : u));
         } catch (err) {
-            console.error('Error al cambiar el rol del usuario', err);
+            setActionError(err.response?.data?.message || 'No se pudo cambiar el rol del usuario.');
         }
     };
 
@@ -91,7 +108,7 @@ const Users = () => {
         setInviteLoading(true);
 
         try {
-            await api.post('v1/auth/register', {
+            await api.post('v1/auth/team-members', {
                 email: inviteData.email,
                 password: inviteData.password,
                 fullName: inviteData.name,
@@ -101,7 +118,9 @@ const Users = () => {
             setInviteData({ name: '', email: '', password: '', role: 'operator' });
             fetchUsers(); // Refrescar la tabla al instante con los datos reales
         } catch (err) {
-            setInviteError(err.response?.data?.message || 'Error al enviar la invitación.');
+            setInviteError(Object.values(err.response?.data?.errors || {}).flat()[0]
+                || err.response?.data?.message
+                || 'Error al enviar la invitación.');
         } finally {
             setInviteLoading(false);
         }
@@ -124,19 +143,28 @@ const Users = () => {
                     <div className="flex items-center space-x-3">
                         <h1 className="text-2xl font-bold text-white tracking-tight">Gestión de usuarios</h1>
                         <span className="text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full">
-                            Solo el staff puede invitar y gestionar usuarios
+                            Permisos según el rol de cada cuenta
                         </span>
                     </div>
                     <p className="text-xs text-gray-400 mt-1">Gestión del acceso, los roles y los permisos del equipo.</p>
                 </div>
-                {isAdmin && (
-                    <button 
-                        onClick={() => setShowInviteModal(true)}
-                        className="bg-[#FE2C55] hover:bg-[#e02447] text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition shadow-md shadow-[#FE2C55]/20 self-start sm:self-center cursor-pointer"
-                    >
-                        + Crear cuenta para miembro del equipo
-                    </button>
-                )}
+                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                    <input
+                        type="search"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Buscar por nombre, correo o rol"
+                        className="bg-[#161B22] border border-gray-800 rounded-xl px-3 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#FE2C55]"
+                    />
+                    {isAdmin && (
+                        <button
+                            onClick={() => setShowInviteModal(true)}
+                            className="bg-[#FE2C55] hover:bg-[#e02447] text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition shadow-md shadow-[#FE2C55]/20 self-start sm:self-center cursor-pointer"
+                        >
+                            + Crear cuenta para miembro del equipo
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Las 4 Tarjetas de Métricas de la Interfaz */}
@@ -146,8 +174,8 @@ const Users = () => {
                     <p className="text-2xl font-extrabold text-white tracking-tight">{totalUsers}</p>
                 </div>
                 <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-4 flex flex-col justify-between h-24">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">ADMINS</span>
-                    <p className="text-2xl font-extrabold text-purple-400 tracking-tight">{adminCount - 1}</p>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">ADMINISTRADORES</span>
+                    <p className="text-2xl font-extrabold text-purple-400 tracking-tight">{adminCount}</p>
                 </div>
                 <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl p-4 flex flex-col justify-between h-24">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Activos</span>
@@ -166,6 +194,12 @@ const Users = () => {
                 </div>
             )}
 
+            {actionError && (
+                <div role="alert" className="p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-xs">
+                    {actionError}
+                </div>
+            )}
+
             {/* Tabla Principal */}
             <div className="bg-[#161B22] border border-gray-800/80 rounded-2xl overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
@@ -180,9 +214,12 @@ const Users = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-800/40 text-sm">
-                            {users.length > 0 ? (
-                                users.map((u) => {
+                            {filteredUsers.length > 0 ? (
+                                filteredUsers.map((u) => {
                                     const isRestricted = u.status?.toLowerCase() === 'restricted';
+                                    const canManageTarget = u.id !== user?.id
+                                        && u.role?.toLowerCase() !== 'staff'
+                                        && (user?.role === 'staff' || u.role?.toLowerCase() === 'operator');
                                     return (
                                         <tr key={u.id} className="hover:bg-[#1f242c]/20 transition-colors">
                                             <td className="px-6 py-4 flex items-center space-x-3">
@@ -206,36 +243,23 @@ const Users = () => {
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 text-center space-x-2">
-                                                {isAdmin ? (
+                                                {isAdmin && canManageTarget ? (
                                                     <>
                                                         <button
                                                             onClick={() => handleToggleAccess(u)}
                                                             className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs font-medium rounded-lg text-gray-300 transition cursor-pointer"
                                                         >
-                                                            {isRestricted ? 'Activate' : 'Restrict'}
+                                                            {isRestricted ? 'Activar' : 'Restringir'}
                                                         </button>
-                                                        <button
-                                                            onClick={() => handleChangeRole(u)}
-                                                            className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs font-medium rounded-lg text-gray-300 transition cursor-pointer"
-                                                        >
-                                                            Change Role
-                                                        </button>
+                                                        {user?.role === 'staff' && (
+                                                            <button
+                                                                onClick={() => handleChangeRole(u)}
+                                                                className="px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs font-medium rounded-lg text-gray-300 transition cursor-pointer"
+                                                            >Cambiar rol</button>
+                                                        )}
                                                     </>
                                                 ) : (
-                                                    <>
-                                                        <button
-                                                            disabled
-                                                            className="px-3 py-1 bg-gray-800/40 text-xs font-medium rounded-lg text-gray-600 cursor-not-allowed opacity-50"
-                                                        >
-                                                            Solo Staff
-                                                        </button>
-                                                        <button
-                                                            disabled
-                                                            className="px-3 py-1 bg-gray-800/40 text-xs font-medium rounded-lg text-gray-600 cursor-not-allowed opacity-50"
-                                                        >
-                                                            Solo Staff
-                                                        </button>
-                                                    </>
+                                                    <span className="text-xs text-gray-500">Protegido</span>
                                                 )}
                                             </td>
                                         </tr>
@@ -304,11 +328,13 @@ const Users = () => {
 
                             <div>
                                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
-                                    Temporary Password
+                                    Contraseña inicial (mínimo 10 caracteres)
                                 </label>
                                 <input
                                     type="password"
                                     required
+                                    minLength={10}
+                                    maxLength={255}
                                     value={inviteData.password}
                                     onChange={(e) => setInviteData({ ...inviteData, password: e.target.value })}
                                     className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#FE2C55] transition"
@@ -325,9 +351,8 @@ const Users = () => {
                                     onChange={(e) => setInviteData({ ...inviteData, role: e.target.value })}
                                     className="w-full bg-[#0D1117] border border-gray-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#FE2C55] transition font-medium cursor-pointer"
                                 >
-                                    <option value="staff">Staff/Dueño</option>
-                                    <option value="admin">Administrator</option>
-                                    <option value="operator">Operator</option>
+                                    {user?.role === 'staff' && <option value="admin">Administrador</option>}
+                                    <option value="operator">Operador</option>
                                 </select>
                             </div>
 

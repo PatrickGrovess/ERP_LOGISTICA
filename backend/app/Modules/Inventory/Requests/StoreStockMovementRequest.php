@@ -1,7 +1,10 @@
 <?php
 namespace App\Modules\Inventory\Requests;
 
+use App\Modules\Inventory\Models\Location;
+use App\Modules\Inventory\Models\Product;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreStockMovementRequest extends FormRequest
 {
@@ -12,12 +15,23 @@ class StoreStockMovementRequest extends FormRequest
 
     public function rules() : array
     {
+        $tenantId = $this->user('api')?->tenant_id;
+
         return [
-            // 'user_id' => ['required', 'integer', 'exists:users,id'],
-            'product_id'  => ['required', 'integer'],
-            'location_id' => ['required', 'integer'],
-            'type'        => ['required', 'string', 'in:INBOUND,OUTBOUND,ADJUSTMENT'],
-            'quantity'    => ['required', 'integer', 'min:1'],
+            'product_id' => [
+                'required',
+                'integer',
+                Rule::exists((new Product())->getTable(), 'id')->where('tenant_id', $tenantId),
+            ],
+            'location_id' => [
+                'required',
+                'integer',
+                Rule::exists((new Location())->getTable(), 'id')->where('tenant_id', $tenantId),
+            ],
+            'type' => ['required', 'string', 'in:INBOUND,OUTBOUND'],
+            'quantity'    => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'reference_type' => ['nullable', 'string', 'in:ORDER,INVOICE,MANUAL_ADJUSTMENT'],
+            'reference_id' => ['nullable', 'string', 'max:255'],
         ];
     }
 }

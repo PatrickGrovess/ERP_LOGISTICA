@@ -4,6 +4,10 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -43,17 +47,44 @@ return Application::configure(basePath: dirname(__DIR__))
             }
         });
 
-        // 3. Capturador General para cualquier otro Error Servidor (HTTP 500)
+        // Conservar los códigos esperados de validación y autorización en la API.
         $exceptions->render(function (Throwable $e, $request) {
-            if ($request->is('api/*')) {
+            if (!$request->is('api/*')) {
+                return null;
+            }
+
+            if ($e instanceof ValidationException) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => config('app.debug') 
-                        ? $e->getMessage() 
-                        : 'An internal server error occurred.',
-                    'code' => 500
-                ], 500);
+                    'message' => 'Los datos enviados no son válidos.',
+                    'errors' => $e->errors(),
+                    'code' => 422,
+                ], 422);
             }
+
+            if ($e instanceof AuthorizationException) {
+                return response()->json(['status' => 'error', 'message' => 'No tienes permisos.', 'code' => 403], 403);
+            }
+
+            if ($e instanceof ModelNotFoundException) {
+                return response()->json(['status' => 'error', 'message' => 'El recurso solicitado no existe.', 'code' => 404], 404);
+            }
+
+            if ($e instanceof HttpExceptionInterface) {
+                $status = $e->getStatusCode();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $e->getMessage() ?: 'La solicitud no se pudo completar.',
+                    'code' => $status,
+                ], $status);
+            }
+
+            report($e);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ocurrió un error interno. Inténtalo de nuevo.',
+                'code' => 500,
+            ], 500);
         });
 
     })->create();

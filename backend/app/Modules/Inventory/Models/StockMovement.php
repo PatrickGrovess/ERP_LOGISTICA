@@ -24,7 +24,9 @@ class StockMovement extends Model
         'location_id',
         'user_id',
         'type',
-        'quantity'
+        'quantity',
+        'reference_type',
+        'reference_id',
     ];
 
     // Relacion con el producto
